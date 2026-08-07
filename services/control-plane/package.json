@@ -1,0 +1,50 @@
+{
+  "name": "@fleet/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provisioning + telemetry persistence API (NestJS): tenants, devices, IMEI allow-list, telemetry consumer",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/main.js",
+    "demo": "node dist/src/dev-server.js",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/**/*.test.js\"",
+    "test:pg": "tsc -p tsconfig.json && node --test dist/test/pg.integration.test.js"
+  },
+  "dependencies": {
+    "@apollo/server": "^5.0.0",
+    "@as-integrations/express5": "^1.1.0",
+    "@nestjs/apollo": "^13.0.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/graphql": "^13.0.0",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/platform-ws": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@nestjs/throttler": "^6.4.0",
+    "@nestjs/websockets": "^11.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "exceljs": "^4.4.0",
+    "graphql": "^16.9.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.1",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.15.1",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "swagger-ui-express": "^5.0.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/pdfkit": "^0.13.9",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  },
+  "engines": { "node": ">=22" }
+}

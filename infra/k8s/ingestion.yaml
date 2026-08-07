@@ -1,0 +1,104 @@
+# Device-facing ingestion tier.
+#
+# STATUS: written and reviewed, but never applied to a live cluster (no cluster
+# was available in the build environment). Validate with
+#   kubectl apply --dry-run=server -f infra/k8s/
+# and roll out on staging first.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleet-ingestion
+  annotations:
+    # Devices speak raw binary TCP — this MUST be a network (L4) load balancer.
+    # An ALB / HTTP Ingress will not work.
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    # Long-lived device sockets: don't let the LB idle them out.
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: '3600'
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local # preserve device source IPs
+  selector:
+    app: fleet-ingestion
+  ports:
+    - name: device-tcp
+      protocol: TCP
+      port: 5027
+      targetPort: 5027
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleet-ingestion
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: fleet-ingestion }
+  template:
+    metadata:
+      labels: { app: fleet-ingestion }
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '9100'
+    spec:
+      # Devices hold persistent sockets; give them time to finish and
+      # reconnect elsewhere. Unacked records are re-sent, so nothing is lost.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: ingestion
+          image: ghcr.io/your-org/fleet-ingestion:latest
+          ports:
+            - { name: device-tcp, containerPort: 5027 }
+            - { name: metrics, containerPort: 9100 }
+          env:
+            - { name: TCP_PORT, value: '5027' }
+            - { name: HTTP_PORT, value: '9100' }
+            - { name: SHUTDOWN_GRACE_MS, value: '45000' }
+            - name: REDIS_URL
+              valueFrom: { secretKeyRef: { name: fleet-secrets, key: redis-url } }
+          # WAL is a per-pod crash buffer. emptyDir is acceptable because the
+          # stream bus is the system of record and unacked records are re-sent;
+          # use a PVC if you want the buffer to survive pod loss.
+          volumeMounts:
+            - { name: wal, mountPath: /wal }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 9100 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 9100 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { cpu: '1', memory: 512Mi }
+      volumes:
+        - name: wal
+          emptyDir: {}
+---
+# Ingestion scales on CONNECTION COUNT, not CPU — a node can be saturated with
+# idle sockets at low CPU. This needs the Prometheus adapter for the custom
+# metric; the CPU target is a floor, not the real signal.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fleet-ingestion
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: fleet-ingestion }
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Pods
+      pods:
+        metric: { name: ingest_active_connections }
+        target: { type: AverageValue, averageValue: '5000' }
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleDown:
+      # Scaling in drops device sockets (they reconnect, but churn is costly).
+      stabilizationWindowSeconds: 600

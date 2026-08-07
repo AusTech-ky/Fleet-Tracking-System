@@ -1,0 +1,14 @@
+{
+  "name": "@fleet/ingestion-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Proof-of-concept Teltonika Codec 8/8E TCP ingestion for the FTC927",
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "start": "node src/server/tcp-server.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

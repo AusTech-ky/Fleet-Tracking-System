@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Unit + integration tests for the workspaces (protocol, ingestion, control-plane).
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg16 # TimescaleDB + PostGIS
+        env:
+          POSTGRES_PASSWORD: fleet
+          POSTGRES_DB: fleet
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fleet"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:fleet@localhost:5432/fleet
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+
+      - name: Install workspaces
+        run: npm ci
+
+      - name: Apply DB migrations (all, in order)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          for f in services/control-plane/migrations/*.sql; do
+            echo "applying $f"
+            PGPASSWORD=fleet psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d fleet -f "$f"
+          done
+
+      - name: Test all workspaces (unit + in-memory e2e)
+        run: npm test
+
+      - name: Control-plane integration tests (real PostGIS/Timescale + Redis)
+        working-directory: services/control-plane
+        run: npm run test:pg
+
+  # The web app is a standalone package (its own lockfile) — build it.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: apps/web/package-lock.json }
+      - name: Build web
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+
+  # Validate the production Dockerfiles build.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ingestion image
+        uses: docker/build-push-action@v6
+        with: { context: ., file: services/ingestion/Dockerfile, push: false, tags: fleet/ingestion:ci }
+      - name: Build control-plane image
+        uses: docker/build-push-action@v6
+        with: { context: ., file: services/control-plane/Dockerfile, push: false, tags: fleet/control-plane:ci }

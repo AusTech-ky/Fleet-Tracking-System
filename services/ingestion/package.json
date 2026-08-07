@@ -1,0 +1,18 @@
+{
+  "name": "@fleet/ingestion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Production Teltonika ingestion service (TCP/UDP/TLS, durable sink, dedupe, downlink)",
+  "scripts": {
+    "test": "node --experimental-transform-types --test \"test/*.test.ts\"",
+    "start": "node --experimental-transform-types src/main.ts"
+  },
+  "dependencies": {
+    "@fleet/protocol-teltonika": "*"
+  },
+  "optionalDependencies": {
+    "ioredis": "^5.4.1"
+  },
+  "engines": { "node": ">=22" }
+}

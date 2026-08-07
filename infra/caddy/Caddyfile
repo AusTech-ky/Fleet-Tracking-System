@@ -1,0 +1,22 @@
+# Caddy: HTTPS for the browser-facing surfaces. Certificates are obtained and
+# renewed automatically from Let's Encrypt once DNS points at this host.
+#
+# Device traffic does NOT pass through here — Teltonika trackers speak a binary
+# TCP protocol straight to the ingestion service on :5027.
+
+{
+	email {$ACME_EMAIL}
+}
+
+# Web app
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy web:3001
+}
+
+# API + WebSocket live feed + GraphQL + Swagger
+{$API_DOMAIN} {
+	encode gzip
+	# Caddy proxies WebSocket upgrades transparently, so /rt works as-is.
+	reverse_proxy control-plane:3000
+}

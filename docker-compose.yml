@@ -1,0 +1,67 @@
+# Full local stack: TimescaleDB+PostGIS, Redis, ingestion, and control-plane.
+# Brings up the whole data path end-to-end:
+#   device -> ingestion (TCP/UDP) -> Redis stream -> control-plane consumer -> DB
+#   control-plane provisioning -> Redis allow-list -> ingestion device auth
+#
+# Usage:  docker compose up --build
+services:
+  db:
+    image: timescale/timescaledb-ha:pg16   # bundles TimescaleDB + PostGIS
+    environment:
+      POSTGRES_PASSWORD: fleet
+      POSTGRES_DB: fleet
+    # Host port 5433 (5432 is often taken by a local/WSL Postgres); containers
+    # still reach it on the internal network as db:5432.
+    ports: ["5433:5432"]
+    volumes:
+      # Mount the whole directory so every numbered migration runs, in order,
+      # on a fresh volume (001_init, 002_…, …) — not just the initial schema.
+      - ./services/control-plane/migrations:/docker-entrypoint-initdb.d:ro
+      - dbdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fleet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: services/ingestion/Dockerfile
+    environment:
+      TCP_PORT: "5027"
+      UDP_PORT: "5027"
+      HTTP_PORT: "9100"
+      REDIS_URL: "redis://redis:6379"   # enables shared allow-list + stream bus + dedupe
+    ports:
+      - "5027:5027/tcp"
+      - "5027:5027/udp"
+      - "9100:9100"
+    depends_on:
+      redis: { condition: service_healthy }
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: services/control-plane/Dockerfile
+    environment:
+      PORT: "3000"
+      JWT_SECRET: "change-me-in-prod"
+      DATABASE_URL: "postgres://postgres:fleet@db:5432/fleet"
+      REDIS_URL: "redis://redis:6379"
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  dbdata:

@@ -1,0 +1,15 @@
+{
+  "name": "fleet-tracking",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Global multi-tenant fleet tracking platform (monorepo)",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": { "node": ">=22" }
+}

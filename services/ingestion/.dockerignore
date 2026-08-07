@@ -1,0 +1,6 @@
+node_modules
+.wal
+.wal-*
+*.ndjson
+test
+*.log

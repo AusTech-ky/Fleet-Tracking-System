@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Semantic design tokens (RGB channel triples so Tailwind's `/opacity`
+ * modifiers work via rgb(var(--x) / <alpha-value>)). Light is the default;
+ * the theme toggle sets data-theme="dark" on <html>.
+ */
+:root {
+  --bg: 248 250 252;          /* slate-50  */
+  --surface: 255 255 255;     /* white     */
+  --surface-2: 241 245 249;   /* slate-100 */
+  --border: 226 232 240;      /* slate-200 */
+  --fg: 15 23 42;             /* slate-900 */
+  --fg-muted: 100 116 139;    /* slate-500 */
+  --fg-subtle: 148 163 184;   /* slate-400 */
+  --brand: 2 132 199;         /* sky-600   */
+  --brand-fg: 255 255 255;
+  --brand-weak: 224 242 254;  /* sky-100   */
+  --success: 5 150 105;       /* emerald-600 */
+  --warning: 217 119 6;       /* amber-600 */
+  --danger: 220 38 38;        /* red-600   */
+
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --shadow-lg: 0 10px 25px -5px rgb(15 23 42 / 0.12), 0 8px 10px -6px rgb(15 23 42 / 0.08);
+}
+
+:root[data-theme='dark'] {
+  --bg: 8 12 22;
+  --surface: 17 24 39;        /* slate-900-ish */
+  --surface-2: 30 41 59;      /* slate-800 */
+  --border: 39 51 71;
+  --fg: 226 232 240;          /* slate-200 */
+  --fg-muted: 148 163 184;    /* slate-400 */
+  --fg-subtle: 100 116 139;   /* slate-500 */
+  --brand: 56 189 248;        /* sky-400   */
+  --brand-fg: 3 18 31;
+  --brand-weak: 12 74 110;    /* sky-900   */
+  --success: 52 211 153;
+  --warning: 251 191 36;
+  --danger: 248 113 113;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+}
+
+html, body { height: 100%; }
+body {
+  @apply bg-bg text-fg antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color-scheme: light;
+}
+:root[data-theme='dark'] body { color-scheme: dark; }
+
+/* Smooth theme transition (not on transforms/positions). */
+* { transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+
+/* Live vehicle marker: heading-rotated arrow, colored by ignition state. */
+.fleet-marker {
+  width: 18px;
+  height: 18px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: #64748b;
+  clip-path: polygon(50% 0%, 100% 100%, 50% 78%, 0% 100%);
+  transform: rotate(var(--rot, 0deg));
+  transition: transform 0.4s ease;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.fleet-marker[data-ignition='true'] { background: #10b981; }
+.fleet-marker[data-selected='true'] { background: #0ea5e9; width: 24px; height: 24px; }
+
+/* Subtle scrollbars */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }

@@ -1,0 +1,15 @@
+node_modules/
+.wal/
+.wal-*/
+*.ndjson
+dist/
+.env
+.env.local
+# TLS material and Terraform state — never commit
+/certs/
+*.tfstate
+*.tfstate.*
+.terraform/
+*.log
+.DS_Store
+coverage/

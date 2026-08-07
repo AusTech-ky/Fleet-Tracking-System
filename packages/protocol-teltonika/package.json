@@ -1,0 +1,12 @@
+{
+  "name": "@fleet/protocol-teltonika",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Teltonika AVL protocol codecs (Codec 8/8E, Codec 12, UDP) — shared by ingestion",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node --experimental-transform-types --test \"test/*.test.ts\""
+  },
+  "engines": { "node": ">=22" }
+}

@@ -1,5 +1,5 @@
 import { API_URL } from './config';
-import { getToken } from './auth';
+import { getToken, clearToken } from './auth';
 import type {
   Device, Position, Geofence, AlertEvent, Report, ReportType, ExportFormat,
   NotificationConfig, TeamUser, Role, LoginResult, Department, BillingSummary,
@@ -23,6 +23,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A 401 on an authenticated call means the session is gone (expired or
+ * invalidated). Without this the stale token sits in localStorage, the UI still
+ * believes you are signed in, and every action fails with a bare
+ * "Invalid token" and no way to recover. Clear it and send the user to log in.
+ * Auth endpoints are excluded so a wrong password shows inline instead of
+ * bouncing the page.
+ */
+function handleSessionExpired(path: string) {
+  if (path.startsWith('/auth/')) return;
+  clearToken();
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login?expired=1';
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(API_URL + path, {
@@ -35,6 +51,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
+  if (res.status === 401) {
+    handleSessionExpired(path);
+    throw new ApiError(401, 'Your session expired — please sign in again.');
+  }
   if (!res.ok) throw new ApiError(res.status, body?.message ?? res.statusText);
   return body as T;
 }

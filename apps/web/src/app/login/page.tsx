@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -31,11 +31,20 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Arriving here from an expired session (api.ts redirects with ?expired=1).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('expired')) {
+      setNotice('Your session expired. Please sign in again.');
+    }
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null); // the "session expired" banner has served its purpose
     try {
       if (mode === 'register') {
         const res = await api.registerTenant(tenantName, email, password);
@@ -95,6 +104,12 @@ export default function LoginPage() {
           <p className="mb-5 mt-0.5 text-sm text-fg-muted">
             {mfaToken ? 'Enter the 6-digit code from your authenticator app.' : mode === 'login' ? 'Sign in to your fleet dashboard.' : 'Set up a new tenant and admin account.'}
           </p>
+
+          {notice && (
+            <p className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+              {notice}
+            </p>
+          )}
 
           {mfaToken ? (
             <form onSubmit={submitMfa} className="flex flex-col gap-3">

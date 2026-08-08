@@ -23,7 +23,7 @@ function matches(d: Device, groupName: string | undefined, q: string): boolean {
 
 export function DeviceList({
   devices, positions, departments, selectedId, loading = false,
-  onSelect, onCreateGroup, onAssignGroup,
+  onSelect, onCreateGroup, onAssignGroup, onAddDevice,
 }: {
   devices: Device[];
   positions: Record<string, Position>;
@@ -33,6 +33,7 @@ export function DeviceList({
   onSelect: (id: string) => void;
   onCreateGroup: (name: string) => Promise<void>;
   onAssignGroup: (deviceId: string, departmentId: string | null) => Promise<void>;
+  onAddDevice: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -153,10 +154,16 @@ export function DeviceList({
       <div className="flex flex-col gap-2 border-b border-border p-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Devices</span>
-          <button onClick={() => { setAdding((a) => !a); setError(null); }}
-            className="rounded-md px-1.5 py-0.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg">
-            + New group
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={onAddDevice}
+              className="rounded-md px-1.5 py-0.5 text-xs font-medium text-brand hover:bg-brand/10">
+              + Device
+            </button>
+            <button onClick={() => { setAdding((a) => !a); setError(null); }}
+              className="rounded-md px-1.5 py-0.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg">
+              + Group
+            </button>
+          </div>
         </div>
         <Input
           type="search"
@@ -190,7 +197,11 @@ export function DeviceList({
           </div>
         )}
         {!loading && devices.length === 0 && (
-          <p className="px-1 text-sm text-fg-muted">No devices yet. Provision one in Settings or via the API.</p>
+          <div className="px-1 py-4 text-center">
+            <p className="text-sm text-fg-muted">No devices yet.</p>
+            <p className="mt-1 text-xs text-fg-subtle">Register a tracker by its IMEI before powering it on.</p>
+            <Button className="mt-3" onClick={onAddDevice}>+ Add your first device</Button>
+          </div>
         )}
         {departments.length === 0 ? (
           <div className="flex flex-col gap-2">{ungrouped.map(renderDevice)}</div>

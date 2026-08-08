@@ -1,4 +1,5 @@
-import { forwardRef } from 'react';
+'use client';
+import { forwardRef, useEffect } from 'react';
 
 /** Token-based primitives (theme-aware via CSS variables). */
 
@@ -33,6 +34,41 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
 
 export function Card({ className = '', ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={`rounded-xl border border-border bg-surface shadow-sm ${className}`} {...props} />;
+}
+
+/** Centered modal dialog. Closes on Escape or backdrop click. */
+export function Modal({
+  open, title, onClose, children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div role="dialog" aria-modal="true" aria-label={title}
+        className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="font-semibold text-fg">{title}</h2>
+          <button onClick={onClose} aria-label="Close"
+            className="rounded-md px-1.5 text-fg-subtle hover:bg-surface-2 hover:text-fg">✕</button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
 }
 
 export function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: string }) {

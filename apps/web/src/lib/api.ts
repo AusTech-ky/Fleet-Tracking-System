@@ -78,6 +78,9 @@ export const api = {
   renameDevice: (deviceId: string, name: string | null) =>
     request<Device>(`/devices/${deviceId}/name`, { method: 'PATCH', body: JSON.stringify({ name }) }),
 
+  createDevice: (body: { imei: string; model: string; name?: string | null; departmentId?: string | null }) =>
+    request<Device>('/devices', { method: 'POST', body: JSON.stringify(body) }),
+
   billing: () => request<BillingSummary>('/billing'),
   subscribe: (planId: string) =>
     request<{ plan: { id: string } }>('/billing/subscribe', { method: 'POST', body: JSON.stringify({ planId }) }),

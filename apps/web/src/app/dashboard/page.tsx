@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { useLivePositions } from '@/lib/useLivePositions';
 import { DeviceList } from '@/components/DeviceList';
 import { DeviceDetail } from '@/components/DeviceDetail';
+import { AddDeviceDialog } from '@/components/AddDeviceDialog';
 import { AlertsPanel } from '@/components/AlertsPanel';
 import { GeofencePanel } from '@/components/GeofencePanel';
 import { Playback } from '@/components/Playback';
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const [followId, setFollowId] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ deviceId: string; nonce: number } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const queryClient = useQueryClient();
   const run = useAction();
 
@@ -114,6 +116,18 @@ export default function Dashboard() {
       await api.renameDevice(deviceId, name);
       await queryClient.invalidateQueries({ queryKey: ['devices'] });
     }, `Renamed to “${name}”`);
+  }
+
+  /**
+   * Provision a tracker. Throws on failure so the dialog stays open with the
+   * user's input intact — the error itself is surfaced as a toast (duplicate
+   * IMEI, plan quota reached, insufficient role, …).
+   */
+  async function addDevice(input: { imei: string; model: string; name: string | null; departmentId: string | null }) {
+    const created = await api.createDevice(input);
+    await queryClient.invalidateQueries({ queryKey: ['devices'] });
+    setSelectedId(created.id);
+    return created;
   }
 
   /** Selecting a device pans the map to it (and opens nothing else). */
@@ -208,6 +222,7 @@ export default function Dashboard() {
             onSelect={selectDevice}
             onCreateGroup={createGroup}
             onAssignGroup={assignGroup}
+            onAddDevice={() => { setAddDeviceOpen(true); setSidebarOpen(false); }}
           />
         </aside>
         <section className="relative min-w-0 flex-1">
@@ -250,6 +265,17 @@ export default function Dashboard() {
           />
         </section>
       </div>
+
+      <AddDeviceDialog
+        open={addDeviceOpen}
+        departments={departmentsQuery.data ?? []}
+        onClose={() => setAddDeviceOpen(false)}
+        onCreate={async (input) => {
+          // Let failures propagate so the dialog stays open; `run` toasts them.
+          const ok = await run(() => addDevice(input), `Device “${input.name || input.imei}” added`);
+          if (!ok) throw new Error('failed');
+        }}
+      />
     </main>
   );
 }

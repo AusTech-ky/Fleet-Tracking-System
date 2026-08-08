@@ -1,5 +1,5 @@
 import { types, type Pool } from 'pg';
-import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription } from './entities';
+import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
 import { DEFAULT_ALERT_CONFIG, emptyNotificationConfig } from './entities';
 
 // The domain types declare all timestamps as ISO-8601 strings, but node-pg
@@ -10,7 +10,7 @@ types.setTypeParser(1184, (v: string | null) => (v === null ? null : new Date(v)
 import type {
   TenantRepository, UserRepository, DeviceRepository, OrgUnitRepository, VehicleRepository, PositionRepository,
   GeofenceRepository, AlertRepository, TripRepository, AlertConfigRepository, NotificationConfigRepository,
-  SubscriptionRepository,
+  SubscriptionRepository, RefreshTokenRepository,
 } from './repository';
 
 /**
@@ -397,5 +397,32 @@ export class PgSubscriptionRepository implements SubscriptionRepository {
       [tenantId, s.planId, s.status],
     );
     return s;
+  }
+}
+
+export class PgRefreshTokenRepository implements RefreshTokenRepository {
+  constructor(private readonly pool: Pool) {}
+  private cols = `id, user_id AS "userId", token_hash AS "tokenHash", family_id AS "familyId",
+                  expires_at AS "expiresAt", used_at AS "usedAt", revoked_at AS "revokedAt", created_at AS "createdAt"`;
+  async create(t: RefreshToken) {
+    const { rows } = await this.pool.query(
+      `INSERT INTO refresh_token (id, user_id, token_hash, family_id, expires_at)
+       VALUES ($1,$2,$3,$4,$5) RETURNING ${this.cols}`,
+      [t.id, t.userId, t.tokenHash, t.familyId, t.expiresAt],
+    );
+    return rows[0];
+  }
+  async findByHash(tokenHash: string) {
+    const { rows } = await this.pool.query(
+      `SELECT ${this.cols} FROM refresh_token WHERE token_hash=$1`, [tokenHash]);
+    return rows[0] ?? null;
+  }
+  async markUsed(id: string, usedAt: string) {
+    await this.pool.query(`UPDATE refresh_token SET used_at=$2 WHERE id=$1`, [id, usedAt]);
+  }
+  async revokeFamily(familyId: string, revokedAt: string) {
+    await this.pool.query(
+      `UPDATE refresh_token SET revoked_at=$2 WHERE family_id=$1 AND revoked_at IS NULL`,
+      [familyId, revokedAt]);
   }
 }

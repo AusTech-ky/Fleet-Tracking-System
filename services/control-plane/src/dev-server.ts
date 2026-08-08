@@ -31,7 +31,14 @@ const START: Array<[string, number, number]> = [
 
 async function bootstrap() {
   const log = new Logger('Demo');
-  const config = loadConfig({ USE_IN_MEMORY: 'true', JWT_SECRET: 'demo-secret', PORT: process.env.PORT ?? '3000' } as NodeJS.ProcessEnv);
+  // Inherit process.env (so JWT_EXPIRES_IN, TRIP_STOP_MIN_SEC etc. can be tuned
+  // when exercising the demo) but force in-memory mode and a default secret.
+  const config = loadConfig({
+    ...process.env,
+    USE_IN_MEMORY: 'true',
+    JWT_SECRET: process.env.JWT_SECRET ?? 'demo-secret',
+    PORT: process.env.PORT ?? '3000',
+  } as NodeJS.ProcessEnv);
   const app = await NestFactory.create(AppModule.forRoot(config), { logger: ['error', 'warn'] });
   applyHttpHardening(app, { corsOrigins: config.corsOrigins });
   app.useWebSocketAdapter(new WsAdapter(app));

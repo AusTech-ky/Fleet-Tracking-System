@@ -30,6 +30,12 @@ export class MfaVerifyDto {
   code!: string;
 }
 
+export class RefreshDto {
+  @IsString()
+  @MinLength(10)
+  refreshToken!: string;
+}
+
 export class MfaCodeDto {
   @IsString()
   @MinLength(6)

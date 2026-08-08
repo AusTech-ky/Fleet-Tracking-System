@@ -48,14 +48,14 @@ export default function LoginPage() {
     try {
       if (mode === 'register') {
         const res = await api.registerTenant(tenantName, email, password);
-        login(res.accessToken);
+        login(res.accessToken, res.refreshToken);
         router.replace('/dashboard');
         return;
       }
       const res = await api.login(email, password);
       if ('mfaRequired' in res) setMfaToken(res.mfaToken);
       else {
-        login(res.accessToken);
+        login(res.accessToken, res.refreshToken);
         router.replace('/dashboard');
       }
     } catch (err) {
@@ -71,7 +71,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const res = await api.mfaVerify(mfaToken!, code);
-      login(res.accessToken);
+      login(res.accessToken, res.refreshToken);
       router.replace('/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid code');

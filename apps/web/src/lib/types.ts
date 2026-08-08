@@ -93,7 +93,7 @@ export interface NotificationConfig {
   webhookSecret: string;
   types: AlertType[] | null;
 }
-export type LoginResult = { accessToken: string } | { mfaRequired: true; mfaToken: string };
+export type LoginResult = { accessToken: string; refreshToken: string } | { mfaRequired: true; mfaToken: string };
 
 export interface Plan {
   id: string;

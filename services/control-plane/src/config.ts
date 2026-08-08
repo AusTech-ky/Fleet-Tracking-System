@@ -21,11 +21,11 @@ export function loadConfig(env = process.env): Config {
   return {
     port: Number(env.PORT ?? 3000),
     jwtSecret,
-    // Access tokens are the ONLY credential today — there is no refresh-token
-    // flow yet, so a 15m lifetime meant the UI died mid-session with an
-    // "Invalid token" error. 12h keeps a working day usable. Shorten this once
-    // refresh tokens land (see ARCHITECTURE §8).
-    jwtExpiresIn: env.JWT_EXPIRES_IN ?? '12h',
+    // Short-lived by design: the frontend silently exchanges the rotating
+    // refresh token for a new one, so users never see a session drop.
+    // Refresh lifetime: REFRESH_EXPIRES_DAYS (default 30).
+
+    jwtExpiresIn: env.JWT_EXPIRES_IN ?? '15m',
     useInMemory,
     databaseUrl: env.DATABASE_URL ?? null,
     redisUrl: env.REDIS_URL ?? null,

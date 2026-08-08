@@ -17,11 +17,12 @@ import {
   InMemoryVehicleRepository, InMemoryPositionRepository, InMemoryGeofenceRepository,
   InMemoryAlertRepository, InMemoryTripRepository, InMemoryAlertConfigRepository,
   InMemoryNotificationConfigRepository, InMemoryOrgUnitRepository, InMemorySubscriptionRepository,
+  InMemoryRefreshTokenRepository,
 } from './domain/in-memory.repository';
 import {
   PgTenantRepository, PgUserRepository, PgDeviceRepository, PgVehicleRepository, PgPositionRepository,
   PgGeofenceRepository, PgAlertRepository, PgTripRepository, PgAlertConfigRepository,
-  PgNotificationConfigRepository, PgOrgUnitRepository, PgSubscriptionRepository,
+  PgNotificationConfigRepository, PgOrgUnitRepository, PgSubscriptionRepository, PgRefreshTokenRepository,
 } from './domain/pg.repository';
 import { FakePaymentProvider, StripePaymentProvider } from './billing/payment';
 import { BillingController, BillingService } from './modules/billing/billing';
@@ -63,6 +64,7 @@ function buildInfraProviders(config: Config): Provider[] {
       { provide: TOKENS.AlertConfigRepository, useValue: new InMemoryAlertConfigRepository() },
       { provide: TOKENS.NotificationConfigRepository, useValue: new InMemoryNotificationConfigRepository() },
       { provide: TOKENS.SubscriptionRepository, useValue: new InMemorySubscriptionRepository() },
+      { provide: TOKENS.RefreshTokenRepository, useValue: new InMemoryRefreshTokenRepository() },
       { provide: TOKENS.PaymentProvider, useValue: new FakePaymentProvider() },
       { provide: TOKENS.AllowListPublisher, useValue: new InMemoryAllowList() },
       { provide: TOKENS.TelemetryBus, useValue: new InMemoryBus() },
@@ -85,6 +87,7 @@ function buildInfraProviders(config: Config): Provider[] {
     { provide: TOKENS.AlertConfigRepository, useValue: new PgAlertConfigRepository(pool) },
     { provide: TOKENS.NotificationConfigRepository, useValue: new PgNotificationConfigRepository(pool) },
     { provide: TOKENS.SubscriptionRepository, useValue: new PgSubscriptionRepository(pool) },
+    { provide: TOKENS.RefreshTokenRepository, useValue: new PgRefreshTokenRepository(pool) },
     { provide: TOKENS.PaymentProvider, useValue: process.env.STRIPE_KEY ? new StripePaymentProvider(process.env.STRIPE_KEY) : new FakePaymentProvider() },
     { provide: TOKENS.AllowListPublisher, useValue: new RedisAllowList(redis) },
     { provide: TOKENS.TelemetryBus, useValue: new RedisStreamBus(redisBlocking) },

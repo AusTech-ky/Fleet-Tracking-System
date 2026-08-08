@@ -589,6 +589,55 @@ test('device names: provision with a name, rename, clear', async () => {
   assert.equal(cleared.body.name, null);
 });
 
+test('refresh tokens: login issues a pair, rotation works, old token is spent', async () => {
+  const reg = await http('POST', '/auth/register-tenant', {
+    body: { tenantName: 'Refresh Co', adminEmail: `refresh${Date.now()}@t.ky`, password: 'password123' },
+  });
+  assert.ok(reg.body.accessToken, 'register returns an access token');
+  assert.ok(reg.body.refreshToken, 'register returns a refresh token');
+
+  // Exchange for a new pair.
+  const r1 = await http('POST', '/auth/refresh', { body: { refreshToken: reg.body.refreshToken } });
+  assert.equal(r1.status, 200);
+  assert.ok(r1.body.accessToken);
+  assert.notEqual(r1.body.refreshToken, reg.body.refreshToken, 'refresh token is rotated');
+
+  // The new access token works on a protected route.
+  assert.equal((await http('GET', '/devices', { token: r1.body.accessToken })).status, 200);
+
+  // Reusing the ALREADY-EXCHANGED token is treated as theft: rejected, and the
+  // whole family is revoked so the rotated one dies too.
+  const replay = await http('POST', '/auth/refresh', { body: { refreshToken: reg.body.refreshToken } });
+  assert.equal(replay.status, 401);
+  const afterReplay = await http('POST', '/auth/refresh', { body: { refreshToken: r1.body.refreshToken } });
+  assert.equal(afterReplay.status, 401, 'reuse detection revokes the whole family');
+
+  // Garbage is rejected.
+  assert.equal((await http('POST', '/auth/refresh', { body: { refreshToken: 'not-a-real-token' } })).status, 401);
+});
+
+test('refresh tokens: logout revokes the session', async () => {
+  const email = `logout${Date.now()}@t.ky`;
+  const reg = await http('POST', '/auth/register-tenant', {
+    body: { tenantName: 'Logout Co', adminEmail: email, password: 'password123' },
+  });
+  const login = await http('POST', '/auth/login', { body: { email, password: 'password123' } });
+  assert.ok(login.body.refreshToken);
+
+  // Refresh works before logout…
+  assert.equal((await http('POST', '/auth/refresh', { body: { refreshToken: login.body.refreshToken } })).status, 200);
+
+  // …and a fresh session is killed by logout.
+  const login2 = await http('POST', '/auth/login', { body: { email, password: 'password123' } });
+  assert.equal((await http('POST', '/auth/logout', { body: { refreshToken: login2.body.refreshToken } })).status, 200);
+  assert.equal(
+    (await http('POST', '/auth/refresh', { body: { refreshToken: login2.body.refreshToken } })).status,
+    401,
+    'revoked refresh token cannot be exchanged',
+  );
+  void reg;
+});
+
 test('telemetry for an unknown IMEI is skipped, not crashed', async () => {
   const bus = app.get<InMemoryBus>(TOKENS.TelemetryBus);
   await bus.push([{ imei: '111111111111111', ts: '2026-07-24T10:00:00.000Z', data: JSON.stringify({ imei: '111111111111111', ts: '2026-07-24T10:00:00.000Z', latitude: 0, longitude: 0, altitude: 0, heading: 0, speedKph: 0, satellites: 0, fields: {}, attrs: {} }) }]);

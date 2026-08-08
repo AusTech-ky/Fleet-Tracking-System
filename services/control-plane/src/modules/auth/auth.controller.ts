@@ -1,7 +1,7 @@
 import { Body, Controller, Post, HttpCode } from '@nestjs/common';
 import { CurrentUser, Public, type AuthUser } from '../../common/auth';
 import { AuthService } from './auth.service';
-import { RegisterTenantDto, LoginDto, MfaVerifyDto, MfaCodeDto } from './dto';
+import { RegisterTenantDto, LoginDto, MfaVerifyDto, MfaCodeDto, RefreshDto } from './dto';
 
 @Controller('auth')
 export class AuthController {
@@ -18,6 +18,22 @@ export class AuthController {
   @HttpCode(200)
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  /** Exchange a refresh token for a fresh pair (rotates the refresh token). */
+  @Public()
+  @Post('refresh')
+  @HttpCode(200)
+  refresh(@Body() dto: RefreshDto) {
+    return this.auth.refresh(dto.refreshToken);
+  }
+
+  /** Revoke the session. Public: the access token may already have expired. */
+  @Public()
+  @Post('logout')
+  @HttpCode(200)
+  logout(@Body() dto: RefreshDto) {
+    return this.auth.logout(dto.refreshToken);
   }
 
   @Public()

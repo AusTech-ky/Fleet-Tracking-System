@@ -23,6 +23,25 @@ export interface User {
   createdAt: string;
 }
 
+/**
+ * A refresh token, stored HASHED (never in plaintext) so a database leak can't
+ * be replayed. `familyId` links every token descended from one login: rotation
+ * issues a new token in the same family, and if a already-used token is
+ * presented again — the classic sign of theft — the whole family is revoked.
+ */
+export interface RefreshToken {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  familyId: string;
+  expiresAt: string;
+  /** set when this token has been exchanged (rotated) */
+  usedAt: string | null;
+  /** set when revoked by logout or reuse detection */
+  revokedAt: string | null;
+  createdAt: string;
+}
+
 export type SubscriptionStatus = 'active' | 'past_due' | 'canceled';
 
 /** A tenant's billing subscription. Absent → treated as the default plan. */

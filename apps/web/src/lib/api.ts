@@ -1,5 +1,5 @@
 import { API_URL } from './config';
-import { getToken, clearToken } from './auth';
+import { getToken, clearToken, getRefreshToken, setTokens } from './auth';
 import type {
   Device, Position, Geofence, AlertEvent, Report, ReportType, ExportFormat,
   NotificationConfig, TeamUser, Role, LoginResult, Department, BillingSummary,
@@ -24,24 +24,55 @@ export class ApiError extends Error {
 }
 
 /**
- * A 401 on an authenticated call means the session is gone (expired or
- * invalidated). Without this the stale token sits in localStorage, the UI still
- * believes you are signed in, and every action fails with a bare
- * "Invalid token" and no way to recover. Clear it and send the user to log in.
- * Auth endpoints are excluded so a wrong password shows inline instead of
- * bouncing the page.
+ * Only the refresh token can rescue a session. When it is gone or rejected,
+ * clear everything and send the user to sign in — otherwise a dead token sits
+ * in localStorage while the UI still believes it is authenticated.
  */
-function handleSessionExpired(path: string) {
-  if (path.startsWith('/auth/')) return;
+function endSession() {
   clearToken();
   if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
     window.location.href = '/login?expired=1';
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * Exchange the refresh token for a new pair.
+ *
+ * Single-flight: a page load fires several requests at once, and if each one
+ * refreshed independently they would rotate the token concurrently — the
+ * server treats a re-used refresh token as theft and revokes the whole family,
+ * logging the user out. Sharing one in-flight promise keeps rotation serial.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) return false;
+      const body = (await res.json()) as { accessToken?: string; refreshToken?: string };
+      if (!body.accessToken) return false;
+      setTokens(body.accessToken, body.refreshToken);
+      return true;
+    } catch {
+      return false; // offline: don't destroy the session over a network blip
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+async function send(path: string, init: RequestInit): Promise<Response> {
   const token = getToken();
-  const res = await fetch(API_URL + path, {
+  return fetch(API_URL + path, {
     ...init,
     headers: {
       'content-type': 'application/json',
@@ -49,10 +80,26 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.headers ?? {}),
     },
   });
+}
+
+async function request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
+  let res = await send(path, init);
+
+  // Access token expired → refresh once, transparently, and retry.
+  // Auth endpoints are excluded: a wrong password must surface inline.
+  if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
+    if (await refreshSession()) {
+      res = await send(path, init);
+    } else {
+      endSession();
+      throw new ApiError(401, 'Your session expired — please sign in again.');
+    }
+  }
+
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
-  if (res.status === 401) {
-    handleSessionExpired(path);
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    endSession();
     throw new ApiError(401, 'Your session expired — please sign in again.');
   }
   if (!res.ok) throw new ApiError(res.status, body?.message ?? res.statusText);
@@ -67,7 +114,7 @@ export const api = {
     }),
 
   mfaVerify: (mfaToken: string, code: string) =>
-    request<{ accessToken: string }>('/auth/mfa/verify', {
+    request<{ accessToken: string; refreshToken: string }>('/auth/mfa/verify', {
       method: 'POST',
       body: JSON.stringify({ mfaToken, code }),
     }),
@@ -106,7 +153,7 @@ export const api = {
     request<{ plan: { id: string } }>('/billing/subscribe', { method: 'POST', body: JSON.stringify({ planId }) }),
 
   registerTenant: (tenantName: string, adminEmail: string, password: string) =>
-    request<{ accessToken: string }>('/auth/register-tenant', {
+    request<{ accessToken: string; refreshToken: string }>('/auth/register-tenant', {
       method: 'POST',
       body: JSON.stringify({ tenantName, adminEmail, password }),
     }),

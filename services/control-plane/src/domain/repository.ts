@@ -1,4 +1,4 @@
-import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription } from './entities';
+import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
 
 /**
  * Persistence seam. The API/consumer depend on these interfaces, never on a
@@ -18,6 +18,15 @@ export interface UserRepository {
   list(tenantId: string): Promise<User[]>;
   count(tenantId: string): Promise<number>;
   update(id: string, patch: Partial<User>): Promise<User | null>;
+}
+
+export interface RefreshTokenRepository {
+  create(t: RefreshToken): Promise<RefreshToken>;
+  findByHash(tokenHash: string): Promise<RefreshToken | null>;
+  /** mark a token as exchanged (one-time use) */
+  markUsed(id: string, usedAt: string): Promise<void>;
+  /** revoke every non-revoked token in a family (logout / reuse detected) */
+  revokeFamily(familyId: string, revokedAt: string): Promise<void>;
 }
 
 export interface SubscriptionRepository {
@@ -101,6 +110,7 @@ export const TOKENS = {
   NotificationConfigRepository: 'NotificationConfigRepository',
   NotificationDispatcher: 'NotificationDispatcher',
   SubscriptionRepository: 'SubscriptionRepository',
+  RefreshTokenRepository: 'RefreshTokenRepository',
   PaymentProvider: 'PaymentProvider',
   HotState: 'HotState',
   AllowListPublisher: 'AllowListPublisher',

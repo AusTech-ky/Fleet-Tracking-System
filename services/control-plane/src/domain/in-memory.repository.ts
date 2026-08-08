@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription } from './entities';
+import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
 import { DEFAULT_ALERT_CONFIG, emptyNotificationConfig } from './entities';
 import type {
   TenantRepository,
@@ -14,6 +14,7 @@ import type {
   AlertConfigRepository,
   NotificationConfigRepository,
   SubscriptionRepository,
+  RefreshTokenRepository,
 } from './repository';
 
 const now = () => new Date().toISOString();
@@ -239,3 +240,24 @@ export class InMemorySubscriptionRepository implements SubscriptionRepository {
 }
 
 export const newId = randomUUID;
+
+export class InMemoryRefreshTokenRepository implements RefreshTokenRepository {
+  private byId = new Map<string, RefreshToken>();
+  async create(t: RefreshToken) {
+    this.byId.set(t.id, t);
+    return t;
+  }
+  async findByHash(tokenHash: string) {
+    for (const t of this.byId.values()) if (t.tokenHash === tokenHash) return t;
+    return null;
+  }
+  async markUsed(id: string, usedAt: string) {
+    const t = this.byId.get(id);
+    if (t) this.byId.set(id, { ...t, usedAt });
+  }
+  async revokeFamily(familyId: string, revokedAt: string) {
+    for (const [id, t] of this.byId) {
+      if (t.familyId === familyId && !t.revokedAt) this.byId.set(id, { ...t, revokedAt });
+    }
+  }
+}

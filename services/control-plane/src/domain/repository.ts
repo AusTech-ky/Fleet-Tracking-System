@@ -51,6 +51,8 @@ export interface OrgUnitRepository {
   create(o: Omit<OrgUnit, 'createdAt'>): Promise<OrgUnit>;
   list(tenantId: string): Promise<OrgUnit[]>;
   findById(tenantId: string, id: string): Promise<OrgUnit | null>;
+  /** Rename and/or re-parent. Only the keys present in `patch` are written. */
+  update(tenantId: string, id: string, patch: Partial<Pick<OrgUnit, 'name' | 'parentId'>>): Promise<OrgUnit | null>;
   remove(tenantId: string, id: string): Promise<boolean>;
 }
 

@@ -498,6 +498,56 @@ test('departments + access scoping: a department-scoped user only sees its subtr
   void d3;
 });
 
+test('group tree: rename, re-parent, cycle guard, and cascading delete', async () => {
+  const admin = await newTenant('Tree Co', 'tree@org.ky');
+  const mk = async (name: string, parentId?: string) =>
+    (await http('POST', '/departments', { token: admin, body: { name, parentId } })).body;
+
+  // root → mid → leaf
+  const root = await mk('Root');
+  const mid = await mk('Mid', root.id);
+  const leaf = await mk('Leaf', mid.id);
+
+  // Rename leaves the parent untouched.
+  const renamed = await http('PATCH', `/departments/${root.id}`, { token: admin, body: { name: 'Fleet HQ' } });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.body.name, 'Fleet HQ');
+  assert.equal(renamed.body.parentId, null);
+
+  // Re-parent leaf up to the root.
+  const moved = await http('PATCH', `/departments/${leaf.id}`, { token: admin, body: { parentId: root.id } });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.parentId, root.id);
+  assert.equal(moved.body.name, 'Leaf', 'name survives a parent-only patch');
+
+  // Moving back to the root must be possible — null is a real value, not "absent".
+  const toRoot = await http('PATCH', `/departments/${leaf.id}`, { token: admin, body: { parentId: null } });
+  assert.equal(toRoot.status, 200);
+  assert.equal(toRoot.body.parentId, null);
+
+  // Cycle guards.
+  assert.equal(
+    (await http('PATCH', `/departments/${root.id}`, { token: admin, body: { parentId: root.id } })).status, 400,
+    'a group cannot parent itself');
+  assert.equal(
+    (await http('PATCH', `/departments/${root.id}`, { token: admin, body: { parentId: mid.id } })).status, 400,
+    'a group cannot move into its own descendant');
+  assert.equal(
+    (await http('PATCH', `/departments/${root.id}`, { token: admin, body: { parentId: 'nope' } })).status, 404);
+
+  // Non-admins cannot restructure the tree.
+  await http('POST', '/users', { token: admin, body: { email: 'view@org.ky', password: 'password123', role: 'viewer' } });
+  const viewer = (await http('POST', '/auth/login', { body: { email: 'view@org.ky', password: 'password123' } })).body.accessToken;
+  assert.equal((await http('PATCH', `/departments/${root.id}`, { token: viewer, body: { name: 'Hacked' } })).status, 403);
+
+  // Deleting a group takes its subtree with it, but devices survive as ungrouped.
+  const dev = (await http('POST', '/devices', { token: admin, body: { imei: '869900000000001', model: 'FTC927', departmentId: mid.id } })).body;
+  assert.equal((await http('DELETE', `/departments/${root.id}`, { token: admin })).status, 204);
+  const left = (await http('GET', '/departments', { token: admin })).body.map((g: any) => g.id);
+  assert.deepEqual(left.sort(), [leaf.id].sort(), 'root + mid are gone; the re-parented leaf remains');
+  assert.equal((await http('GET', `/devices/${dev.id}`, { token: admin })).status, 200, 'device outlives its group');
+});
+
 test('billing: usage, plan quotas (402), and upgrade', async () => {
   const token = await newTenant('Billing Co', 'admin@billing.ky');
 

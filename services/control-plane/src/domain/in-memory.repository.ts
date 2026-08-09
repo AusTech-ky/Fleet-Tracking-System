@@ -210,10 +210,33 @@ export class InMemoryOrgUnitRepository implements OrgUnitRepository {
     const o = this.byId.get(id);
     return o && o.tenantId === tenantId ? o : null;
   }
+  async update(tenantId: string, id: string, patch: Partial<Pick<OrgUnit, 'name' | 'parentId'>>) {
+    const o = await this.findById(tenantId, id);
+    if (!o) return null;
+    // Spread only the keys actually supplied, so an absent `name` doesn't blank it.
+    const next: OrgUnit = { ...o };
+    if (patch.name !== undefined) next.name = patch.name;
+    if (patch.parentId !== undefined) next.parentId = patch.parentId;
+    this.byId.set(id, next);
+    return next;
+  }
+  /**
+   * Mirrors Postgres' `parent_id ... ON DELETE CASCADE`: removing a group takes
+   * its whole subtree with it. Devices are not touched here — in Postgres their
+   * `department_id` is `ON DELETE SET NULL`, and a device left pointing at a
+   * vanished group renders as ungrouped, which is the same end state.
+   */
   async remove(tenantId: string, id: string) {
     const o = await this.findById(tenantId, id);
     if (!o) return false;
-    return this.byId.delete(id);
+    const doomed = [id];
+    for (let i = 0; i < doomed.length; i++) {
+      for (const child of this.byId.values()) {
+        if (child.tenantId === tenantId && child.parentId === doomed[i]) doomed.push(child.id);
+      }
+    }
+    for (const victim of doomed) this.byId.delete(victim);
+    return true;
   }
 }
 

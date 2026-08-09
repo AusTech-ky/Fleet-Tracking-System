@@ -376,6 +376,18 @@ export class PgOrgUnitRepository implements OrgUnitRepository {
       `SELECT ${this.cols} FROM org_unit WHERE tenant_id=$1 AND id=$2`, [tenantId, id]);
     return rows[0] ?? null;
   }
+  async update(tenantId: string, id: string, patch: Partial<Pick<OrgUnit, 'name' | 'parentId'>>) {
+    // Build the SET list from supplied keys only — COALESCE would make it
+    // impossible to move a group back to the root (parentId: null).
+    const sets: string[] = [];
+    const vals: unknown[] = [tenantId, id];
+    if (patch.name !== undefined) { vals.push(patch.name); sets.push(`name=$${vals.length}`); }
+    if (patch.parentId !== undefined) { vals.push(patch.parentId); sets.push(`parent_id=$${vals.length}`); }
+    if (sets.length === 0) return this.findById(tenantId, id);
+    const { rows } = await this.pool.query(
+      `UPDATE org_unit SET ${sets.join(', ')} WHERE tenant_id=$1 AND id=$2 RETURNING ${this.cols}`, vals);
+    return rows[0] ?? null;
+  }
   async remove(tenantId: string, id: string) {
     const { rowCount } = await this.pool.query(`DELETE FROM org_unit WHERE tenant_id=$1 AND id=$2`, [tenantId, id]);
     return (rowCount ?? 0) > 0;

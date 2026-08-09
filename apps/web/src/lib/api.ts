@@ -137,6 +137,8 @@ export const api = {
   listDepartments: () => request<Department[]>('/departments'),
   createDepartment: (body: { name: string; parentId?: string | null }) =>
     request<Department>('/departments', { method: 'POST', body: JSON.stringify(body) }),
+  updateDepartment: (id: string, body: { name?: string; parentId?: string | null }) =>
+    request<Department>(`/departments/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteDepartment: (id: string) => request<void>(`/departments/${id}`, { method: 'DELETE' }),
 
   assignDeviceDepartment: (deviceId: string, departmentId: string | null) =>

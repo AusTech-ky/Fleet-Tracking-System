@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useLivePositions } from '@/lib/useLivePositions';
-import { DeviceList } from '@/components/DeviceList';
+import { DeviceTree } from '@/components/DeviceTree';
 import { DeviceDetail } from '@/components/DeviceDetail';
 import { AddDeviceDialog } from '@/components/AddDeviceDialog';
 import { AlertsPanel } from '@/components/AlertsPanel';
@@ -98,18 +98,56 @@ export default function Dashboard() {
     }, 'Geofence deleted');
   }
 
-  async function createGroup(name: string) {
-    const ok = await run(async () => {
-      await api.createDepartment({ name });
-      await queryClient.invalidateQueries({ queryKey: ['departments'] });
-    }, `Group “${name}” created`);
-    if (!ok) throw new Error('failed'); // let the sidebar surface its inline error too
-  }
-  async function assignGroup(deviceId: string, departmentId: string | null) {
+  const refreshGroups = () => queryClient.invalidateQueries({ queryKey: ['departments'] });
+
+  async function createGroup(name: string, parentId: string | null) {
     await run(async () => {
-      await api.assignDeviceDepartment(deviceId, departmentId);
+      await api.createDepartment({ name, parentId });
+      await refreshGroups();
+    }, `Group “${name}” created`);
+  }
+  async function renameGroup(id: string, name: string) {
+    await run(async () => {
+      await api.updateDepartment(id, { name });
+      await refreshGroups();
+    }, `Group renamed to “${name}”`);
+  }
+  async function moveGroup(id: string, parentId: string | null) {
+    await run(async () => {
+      await api.updateDepartment(id, { parentId });
+      await refreshGroups();
+    }, parentId ? 'Group moved' : 'Group moved to top level');
+  }
+  /**
+   * Deleting cascades to subgroups (org_unit.parent_id is ON DELETE CASCADE), so
+   * confirm with the subtree size rather than a bare "are you sure?". Devices are
+   * ON DELETE SET NULL — they survive as ungrouped.
+   */
+  async function deleteGroup(id: string) {
+    const groups = departmentsQuery.data ?? [];
+    const doomed = [id];
+    for (let i = 0; i < doomed.length; i++) {
+      for (const g of groups) if (g.parentId === doomed[i]) doomed.push(g.id);
+    }
+    const name = groups.find((g) => g.id === id)?.name ?? 'this group';
+    const extra = doomed.length - 1;
+    const msg = extra > 0
+      ? `Delete “${name}” and its ${extra} subgroup${extra === 1 ? '' : 's'}? Devices inside become ungrouped.`
+      : `Delete “${name}”? Devices inside become ungrouped.`;
+    if (!window.confirm(msg)) return;
+    await run(async () => {
+      await api.deleteDepartment(id);
+      await Promise.all([refreshGroups(), queryClient.invalidateQueries({ queryKey: ['devices'] })]);
+    }, `Group “${name}” deleted`);
+  }
+  async function moveDevices(deviceIds: string[], departmentId: string | null) {
+    const label = deviceIds.length === 1 ? 'Device' : `${deviceIds.length} devices`;
+    await run(async () => {
+      // Sequential: the API is per-device, and a burst of parallel writes against
+      // the same tenant row buys nothing at sidebar-sized selections.
+      for (const id of deviceIds) await api.assignDeviceDepartment(id, departmentId);
       await queryClient.invalidateQueries({ queryKey: ['devices'] });
-    }, departmentId ? 'Device moved' : 'Device removed from group');
+    }, departmentId ? `${label} moved` : `${label} removed from group`);
   }
   async function renameDevice(deviceId: string, name: string) {
     await run(async () => {
@@ -213,7 +251,7 @@ export default function Dashboard() {
             sidebarOpen ? 'translate-x-0 shadow-lg' : '-translate-x-full'
           }`}
         >
-          <DeviceList
+          <DeviceTree
             devices={devicesQuery.data ?? []}
             positions={positions}
             departments={departmentsQuery.data ?? []}
@@ -221,7 +259,10 @@ export default function Dashboard() {
             loading={devicesQuery.isLoading}
             onSelect={selectDevice}
             onCreateGroup={createGroup}
-            onAssignGroup={assignGroup}
+            onRenameGroup={renameGroup}
+            onMoveGroup={moveGroup}
+            onDeleteGroup={deleteGroup}
+            onMoveDevices={moveDevices}
             onAddDevice={() => { setAddDeviceOpen(true); setSidebarOpen(false); }}
           />
         </aside>

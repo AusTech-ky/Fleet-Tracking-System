@@ -137,6 +137,13 @@ export class InMemoryPositionRepository implements PositionRepository {
       .sort((a, b) => a.ts.localeCompare(b.ts))
       .slice(0, limit);
   }
+  async latest(tenantId: string, deviceId: string) {
+    let best: Position | null = null;
+    for (const p of this.rows) {
+      if (p.tenantId === tenantId && p.deviceId === deviceId && (!best || p.ts > best.ts)) best = p;
+    }
+    return best;
+  }
 }
 
 export class InMemoryGeofenceRepository implements GeofenceRepository {

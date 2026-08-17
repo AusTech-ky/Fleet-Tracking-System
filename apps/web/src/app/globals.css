@@ -58,21 +58,42 @@ body {
 /* Smooth theme transition (not on transforms/positions). */
 * { transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 
-/* Live vehicle marker: heading-rotated arrow, colored by ignition state. */
+/*
+ * Live vehicle marker. Colour = motion state, set by MapView via --motion from
+ * lib/motion.ts (green moving / yellow stopped / red parked / black inactive).
+ * A moving vehicle shows as a heading-rotated arrow; anything not moving is a
+ * plain dot — a parked car's last heading is noise, not information.
+ */
 .fleet-marker {
-  width: 18px;
-  height: 18px;
-  border: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #fff;
+  border-radius: 50%;
   padding: 0;
   cursor: pointer;
-  background: #64748b;
+  background: var(--motion, #64748b);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  transition: transform 0.4s ease, background-color 0.3s ease;
+}
+.fleet-marker[data-motion='moving'] {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   clip-path: polygon(50% 0%, 100% 100%, 50% 78%, 0% 100%);
   transform: rotate(var(--rot, 0deg));
-  transition: transform 0.4s ease;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
-.fleet-marker[data-ignition='true'] { background: #10b981; }
-.fleet-marker[data-selected='true'] { background: #0ea5e9; width: 24px; height: 24px; }
+/* Selection: a ring, not a colour swap — the state colour must stay readable. */
+.fleet-marker[data-selected='true'] {
+  outline: 3px solid #0ea5e9;
+  outline-offset: 2px;
+}
+.fleet-marker[data-selected='true'][data-motion='moving'] {
+  outline: none;
+  filter: drop-shadow(0 0 0 2px #0ea5e9) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
 
 /* Subtle scrollbars */
 * { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }

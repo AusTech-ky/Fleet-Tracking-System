@@ -1,14 +1,17 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl, { Map as MlMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { DEFAULT_CENTER, DEFAULT_ZOOM, DEFAULT_BASEMAP } from '@/lib/config';
 import { circleToPolygon, haversineMeters } from '@/lib/geo';
 import { BASEMAPS, BASEMAP_LAYER_IDS, BASEMAP_VISIBLE, buildBaseStyle, type BasemapId } from '@/lib/basemaps';
-import type { Position, Geofence, DrawMode, DrawnShape } from '@/lib/types';
+import type { Position, Geofence, DrawMode, DrawnShape, Device } from '@/lib/types';
+import { motionState, MOTION_HEX, MOTION_LABEL } from '@/lib/motion';
 
 interface Props {
   positions: Record<string, Position>;
+  /** device rows, so a marker can be classified (suspended/retired → inactive) */
+  devices: Device[];
   selectedId: string | null;
   history: Position[];
   geofences: Geofence[];
@@ -28,7 +31,7 @@ interface Props {
  * line. WebGL handles thousands of markers; here we update in place rather than
  * re-adding, so live pushes are cheap.
  */
-export function MapView({ positions, selectedId, history, geofences, playback, drawMode, followId, focus, onSelect, onShapeDrawn }: Props) {
+export function MapView({ positions, devices, selectedId, history, geofences, playback, drawMode, followId, focus, onSelect, onShapeDrawn }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const markers = useRef<Map<string, Marker>>(new Map());
@@ -72,16 +75,26 @@ export function MapView({ positions, selectedId, history, geofences, playback, d
     };
   }, []);
 
+  // "Inactive" is decided by elapsed time, not by a new position arriving — a
+  // vehicle that goes quiet must turn black on its own. Re-run the marker pass
+  // every 30s so that transition happens without waiting for the next report.
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setClock((c) => c + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
+
   // Diff-update markers.
   useEffect(() => {
     const m = map.current;
     if (!m) return;
+    const now = Date.now();
     for (const [deviceId, pos] of Object.entries(positions)) {
       let marker = markers.current.get(deviceId);
       if (!marker) {
         const el = document.createElement('button');
         el.className = 'fleet-marker';
-        el.title = pos.imei;
         el.addEventListener('click', () => onSelect(deviceId));
         marker = new maplibregl.Marker({ element: el }).setLngLat([pos.longitude, pos.latitude]);
         marker.addTo(m);
@@ -90,11 +103,17 @@ export function MapView({ positions, selectedId, history, geofences, playback, d
         marker.setLngLat([pos.longitude, pos.latitude]);
       }
       const el = marker.getElement();
+      const device = deviceById.get(deviceId);
+      // A position with no matching device row can't be classified for
+      // suspended/retired; treat it as an ordinary active device.
+      const state = motionState(device ?? { status: 'active' } as Device, pos, now);
       el.style.setProperty('--rot', `${pos.heading}deg`);
+      el.style.setProperty('--motion', MOTION_HEX[state]);
+      el.dataset.motion = state;
       el.dataset.selected = String(deviceId === selectedId);
-      el.dataset.ignition = String(pos.ignition ?? '');
+      el.title = `${device?.name?.trim() || pos.imei} — ${MOTION_LABEL[state]}${state === 'moving' ? ` · ${pos.speedKph} km/h` : ''}`;
     }
-  }, [positions, selectedId, onSelect]);
+  }, [positions, selectedId, onSelect, deviceById, clock]);
 
   // Draw the selected device's history line.
   useEffect(() => {
@@ -283,6 +302,19 @@ export function MapView({ positions, selectedId, history, geofences, playback, d
         >
           Fit all
         </button>
+      </div>
+
+      {/* Motion legend — the colours must be self-explaining on the map itself. */}
+      <div
+        aria-label="Vehicle status legend"
+        className="pointer-events-none absolute bottom-8 right-2 z-10 flex items-center gap-3 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-muted shadow-sm backdrop-blur"
+      >
+        {(['moving', 'stopped', 'parked', 'inactive'] as const).map((s) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: MOTION_HEX[s] }} />
+            {MOTION_LABEL[s]}
+          </span>
+        ))}
       </div>
     </div>
   );

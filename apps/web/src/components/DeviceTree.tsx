@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input } from './ui';
-import { relativeTime, isStale } from '@/lib/format';
+import { relativeTime } from '@/lib/format';
+import { motionState, motionHint, MOTION_BG } from '@/lib/motion';
 import type { Device, Position, Department } from '@/lib/types';
 
 export function displayName(d: Device): string {
@@ -40,12 +41,10 @@ interface TreeNode {
   subtreeDevices: Device[];
 }
 
+/** Sidebar dot: same classifier as the map marker, so the two never disagree. */
 function statusDot(d: Device, pos: Position | undefined): { cls: string; title: string } {
-  if (d.status === 'suspended' || d.status === 'retired') return { cls: 'bg-danger', title: d.status };
-  if (!pos) return { cls: 'bg-fg-subtle/40', title: 'no position yet' };
-  if (isStale(pos.ts)) return { cls: 'bg-warning', title: `stale — last fix ${relativeTime(pos.ts)}` };
-  if (pos.speedKph > 0) return { cls: 'bg-success', title: `moving — ${pos.speedKph} km/h` };
-  return { cls: 'bg-success/50', title: 'stopped' };
+  const state = motionState(d, pos);
+  return { cls: MOTION_BG[state], title: motionHint(state, pos, relativeTime) };
 }
 
 /** Checkbox that can render the third, "some but not all" state. */

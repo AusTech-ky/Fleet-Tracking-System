@@ -270,6 +270,7 @@ export default function Dashboard() {
         <section className="relative min-w-0 flex-1">
           <MapView
             positions={positions}
+            devices={devicesQuery.data ?? []}
             selectedId={selectedId}
             history={history}
             geofences={geofencesQuery.data ?? []}

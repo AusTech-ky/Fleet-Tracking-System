@@ -13,7 +13,7 @@ import { applyHttpHardening } from '../src/hardening';
 import { loadConfig } from '../src/config';
 import { TOKENS } from '../src/domain/repository';
 import { totp } from '../src/engine/totp';
-import type { InMemoryAllowList, InMemoryBus } from '../src/integrations/in-memory';
+import type { InMemoryAllowList, InMemoryBus, InMemoryHotState } from '../src/integrations/in-memory';
 
 let app: INestApplication;
 let base: string;
@@ -150,6 +150,36 @@ test('telemetry consumer persists positions and serves latest + history', async 
   assert.equal(history.status, 200);
   assert.equal(history.body.length, 2);
   assert.equal(history.body[0].ts, '2026-07-24T10:00:00.000Z', 'history ascending');
+});
+
+test('/latest survives a cold hot-state cache by falling back to the DB and re-warming', async () => {
+  // Seen in production 2026-08-17: after a Redis restart every vehicle showed
+  // "no position yet" and the map was blank, despite thousands of rows in the
+  // position table. The hot-state is a cache; the DB is the record.
+  const token = await newTenant('Cold Co', 'admin@cold.ky');
+  const dev = await http('POST', '/devices', { token, body: { imei: '860000000008888', model: 'FTC927' } });
+  const bus = app.get<InMemoryBus>(TOKENS.TelemetryBus);
+  const mk = (ts: string, lat: number) => ({
+    imei: '860000000008888', ts,
+    data: JSON.stringify({ imei: '860000000008888', ts, latitude: lat, longitude: -81.37, altitude: 0,
+      heading: 0, speedKph: 0, satellites: 8, fields: { ignition: 0 }, attrs: {} }),
+  });
+  await bus.push([mk('2026-07-24T10:00:00.000Z', 19.30), mk('2026-07-24T10:05:00.000Z', 19.31)]);
+
+  // Warm path works.
+  assert.equal((await http('GET', `/devices/${dev.body.id}/latest`, { token })).body.latitude, 19.31);
+
+  // Simulate Redis restart: hot-state gone, DB intact.
+  (app.get(TOKENS.HotState) as InMemoryHotState).clear();
+
+  const cold = await http('GET', `/devices/${dev.body.id}/latest`, { token });
+  assert.equal(cold.status, 200, 'must not 404 when only the cache is empty');
+  assert.equal(cold.body.ts, '2026-07-24T10:05:00.000Z', 'newest row, not just any row');
+  assert.equal(cold.body.latitude, 19.31);
+
+  // And it re-warmed the cache: a second read is served from hot-state.
+  const hot = app.get(TOKENS.HotState) as InMemoryHotState;
+  assert.ok(await hot.getLast(cold.body.tenantId, dev.body.id), 'cache re-warmed after fallback');
 });
 
 test('a device that transmits BEFORE it is provisioned becomes visible once it is', async () => {

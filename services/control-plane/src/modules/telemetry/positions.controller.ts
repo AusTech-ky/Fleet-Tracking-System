@@ -20,7 +20,16 @@ export class PositionsController {
   @Get('latest')
   async latest(@CurrentUser() user: AuthUser, @Param('deviceId') deviceId: string) {
     await this.devices.get(user, deviceId); // tenant + department scope check
-    const pos = await this.hot.getLast(user.tenantId, deviceId);
+    let pos = await this.hot.getLast(user.tenantId, deviceId);
+    if (!pos) {
+      // Hot-state is a cache, not the record. It's empty after a Redis restart,
+      // in a fresh environment, or after a recovery — and without this fallback
+      // every vehicle showed "no position yet" and the map was blank despite a
+      // full history in the DB. Read the newest row and re-warm the cache so
+      // the next request is fast again.
+      pos = await this.positions.latest(user.tenantId, deviceId);
+      if (pos) await this.hot.setLast(pos).catch(() => {}); // best-effort warm
+    }
     if (!pos) throw new NotFoundException('No position yet for this device');
     return pos;
   }

@@ -67,6 +67,12 @@ export interface PositionRepository {
   insertMany(positions: Position[]): Promise<void>;
   /** history for a device within a time range, ascending */
   history(tenantId: string, deviceId: string, from: string, to: string, limit: number): Promise<Position[]>;
+  /**
+   * Most recent position for a device, from durable storage. The Redis
+   * hot-state is the fast path; this is the source of truth it falls back to
+   * (and is re-warmed from) when that key is missing.
+   */
+  latest(tenantId: string, deviceId: string): Promise<Position | null>;
 }
 
 export interface GeofenceRepository {

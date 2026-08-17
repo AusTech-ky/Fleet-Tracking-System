@@ -60,4 +60,8 @@ export class InMemoryHotState implements HotState {
   async getLast(tenantId: string, deviceId: string) {
     return this.map.get(this.key(tenantId, deviceId)) ?? null;
   }
+  /** Test hook: simulate a Redis restart / cold cache. */
+  clear() {
+    this.map.clear();
+  }
 }

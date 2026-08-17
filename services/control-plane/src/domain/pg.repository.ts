@@ -208,6 +208,20 @@ export class PgPositionRepository implements PositionRepository {
     );
     return rows.map((r) => ({ ...r, satellites: 0 })) as Position[];
   }
+  async latest(tenantId: string, deviceId: string) {
+    // Hypertable is chunked by ts; ORDER BY ts DESC LIMIT 1 lets Timescale
+    // start from the newest chunk and stop, so this stays cheap at scale.
+    const { rows } = await this.pool.query(
+      `SELECT tenant_id AS "tenantId", device_id AS "deviceId", imei, ts,
+              ST_Y(geom::geometry) AS latitude, ST_X(geom::geometry) AS longitude,
+              altitude, heading, speed_kph AS "speedKph", ignition, attrs
+       FROM position
+       WHERE tenant_id=$1 AND device_id=$2
+       ORDER BY ts DESC LIMIT 1`,
+      [tenantId, deviceId],
+    );
+    return rows[0] ? ({ ...rows[0], satellites: 0 } as Position) : null;
+  }
 }
 
 /**

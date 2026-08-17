@@ -1,66 +1,64 @@
 #!/usr/bin/env bash
-# Mirror the PRODUCTION database into the local docker-compose Postgres, so
-# dev shows exactly the tenants / devices / groups / history that live has.
+# Mirror PRODUCTION into the local docker-compose Postgres, so dev shows exactly
+# the tenants / devices / groups / history that the live site has.
 #
-# One-way and read-only against production: this only ever *reads* from prod
-# (pg_dump) and *writes* to the local container. Nothing you do in dev
-# afterwards can touch live.
+# Read-only against production, over SSH. The live DB never needs a public
+# port. Nothing you do in dev afterwards can touch live — it's a copy.
 #
-# Usage:
-#   PROD_DATABASE_URL='postgres://user:pass@host:5432/db' scripts/mirror-prod-db.sh
+#   scripts/mirror-prod-db.sh                 # uses defaults below
+#   SSH_HOST=root@1.2.3.4 scripts/mirror-prod-db.sh
 #
-# The URL comes from Coolify -> your Postgres resource -> "Postgres URL
-# (public)". Pass it via the environment, never commit it.
+# Re-run any time to refresh. It rebuilds the local `fleet` database from our
+# own migrations, then loads prod's rows into it — so anything created only in
+# dev is discarded.
 #
-# Re-run any time to refresh the snapshot. It drops and recreates the local
-# `fleet` database, so anything you created only in dev is discarded.
+# Why not pg_dump the whole cluster? Two reasons, both learned the hard way:
+#  - Timescale's private catalog (_timescaledb_catalog.*) differs between
+#    versions; restoring prod's into a different local Timescale fails.
+#  - `position` is a hypertable: its rows live in chunk tables that
+#    `pg_dump -t position` silently skips. COPY through the parent sees them all.
 set -euo pipefail
+export MSYS_NO_PATHCONV=1   # Git Bash on Windows: stop it rewriting /tmp paths for docker
 
-# Git Bash on Windows rewrites POSIX-looking args (/tmp/x) into C:/... paths
-# before docker sees them, so the container is told to write to a Windows path
-# that doesn't exist inside it. Disabling the conversion keeps them intact.
-export MSYS_NO_PATHCONV=1
-
-: "${PROD_DATABASE_URL:?set PROD_DATABASE_URL to the production Postgres URL (from Coolify)}"
-case "$PROD_DATABASE_URL" in
-  postgres://*|postgresql://*) ;;
-  *) echo "PROD_DATABASE_URL must be a real postgres:// URL from Coolify, not: $PROD_DATABASE_URL" >&2; exit 1 ;;
-esac
+SSH_HOST="${SSH_HOST:-root@167.99.49.143}"
+PROD_DB_CONTAINER="${PROD_DB_CONTAINER:-fgqzmk8mngq9konp9tu6dkcv}"   # Coolify's fts-pg (timescale image)
+PROD_DB_NAME="${PROD_DB_NAME:-fleet}"
 
 cd "$(dirname "$0")/.."
-DB_CONTAINER="$(docker compose ps -q db)"
-[ -n "$DB_CONTAINER" ] || { echo "local db container is not running: docker compose up -d db redis" >&2; exit 1; }
+DB="$(docker compose ps -q db)"
+[ -n "$DB" ] || { echo "local db not running: docker compose up -d db redis" >&2; exit 1; }
 
-# The local image is a plain Postgres 16; matching major means pg_dump/pg_restore
-# inside it can talk to prod without version complaints.
-echo "[mirror] dumping production (schema + data)…"
-docker exec -e PGCONNECT_TIMEOUT=15 "$DB_CONTAINER" \
-  pg_dump "$PROD_DATABASE_URL" \
-    --format=custom --no-owner --no-privileges \
-    --file=/tmp/prod.dump
+# App tables in FK-safe load order. `position` is handled separately (hypertable).
+TABLES="tenant org_unit app_user vehicle device geofence alert_config notification_config subscription refresh_token alert_event trip"
 
-echo "[mirror] recreating local 'fleet' database…"
-docker exec "$DB_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -q \
+prod() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$SSH_HOST" \
+  "docker exec $PROD_DB_CONTAINER psql -U postgres -d $PROD_DB_NAME -Atq -c \"$1\""; }
+
+echo "[mirror] checking SSH + prod DB…"
+prod "select 'ok'" | grep -q ok || { echo "cannot reach prod DB via $SSH_HOST" >&2; exit 1; }
+
+echo "[mirror] rebuilding local 'fleet' from migrations…"
+docker exec "$DB" psql -U postgres -q \
   -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='fleet' AND pid<>pg_backend_pid();" \
-  -c "DROP DATABASE IF EXISTS fleet;" \
-  -c "CREATE DATABASE fleet;"
+  -c "DROP DATABASE IF EXISTS fleet;" -c "CREATE DATABASE fleet;" >/dev/null
+for f in services/control-plane/migrations/*.sql; do
+  docker exec -i "$DB" psql -U postgres -d fleet -q -v ON_ERROR_STOP=1 < "$f" >/dev/null
+done
 
-# TimescaleDB must be pre-loaded before restoring hypertables into it, and the
-# restore must run with its 'restoring' guard on — this is the documented
-# procedure for restoring a Timescale dump.
-echo "[mirror] restoring into local…"
-docker exec "$DB_CONTAINER" psql -U postgres -d fleet -v ON_ERROR_STOP=1 -q \
-  -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" \
-  -c "CREATE EXTENSION IF NOT EXISTS postgis;" \
-  -c "SELECT timescaledb_pre_restore();"
-docker exec "$DB_CONTAINER" \
-  pg_restore -U postgres -d fleet --no-owner --no-privileges --exit-on-error /tmp/prod.dump
-docker exec "$DB_CONTAINER" psql -U postgres -d fleet -q -c "SELECT timescaledb_post_restore();"
-docker exec "$DB_CONTAINER" rm -f /tmp/prod.dump
+echo "[mirror] copying rows prod → local…"
+# Defer FK checks for the batch (org_unit self-references; load order alone
+# can't satisfy a parent that sorts after its child).
+for t in $TABLES; do
+  ssh -o BatchMode=yes "$SSH_HOST" \
+    "docker exec $PROD_DB_CONTAINER psql -U postgres -d $PROD_DB_NAME -Atc \"\\copy (select * from $t) to stdout\"" \
+    | docker exec -i "$DB" psql -U postgres -d fleet -q \
+        -c "SET session_replication_role = replica;" \
+        -c "\\copy $t from stdin"
+  printf "  %-20s %s\n" "$t" "$(docker exec "$DB" psql -U postgres -d fleet -Atc "select count(*) from $t")"
+done
+ssh -o BatchMode=yes "$SSH_HOST" \
+  "docker exec $PROD_DB_CONTAINER psql -U postgres -d $PROD_DB_NAME -Atc \"\\copy (select * from position order by ts) to stdout\"" \
+  | docker exec -i "$DB" psql -U postgres -d fleet -q -c "\\copy position from stdin"
+printf "  %-20s %s\n" "position" "$(docker exec "$DB" psql -U postgres -d fleet -Atc "select count(*) from position")"
 
-echo "[mirror] done. Local now mirrors production:"
-docker exec "$DB_CONTAINER" psql -U postgres -d fleet -At -c "
-  SELECT '  tenants:  ' || count(*) FROM tenant
-  UNION ALL SELECT '  devices:  ' || count(*) FROM device
-  UNION ALL SELECT '  groups:   ' || count(*) FROM org_unit
-  UNION ALL SELECT '  positions:' || count(*) FROM position;"
+echo "[mirror] done. Local mirrors production as of now."

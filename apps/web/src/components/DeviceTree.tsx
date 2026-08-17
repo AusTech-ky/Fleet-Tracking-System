@@ -116,7 +116,7 @@ function RowMenu({ items }: { items: Array<{ label: string; onClick: () => void;
 
 export function DeviceTree({
   devices, positions, departments, selectedId, loading = false,
-  onSelect, onCreateGroup, onRenameGroup, onMoveGroup, onDeleteGroup, onMoveDevices, onAddDevice,
+  onSelect, onCreateGroup, onRenameGroup, onMoveGroup, onDeleteGroup, onMoveDevices, onRenameDevice, onAddDevice,
 }: {
   devices: Device[];
   positions: Record<string, Position>;
@@ -129,6 +129,7 @@ export function DeviceTree({
   onMoveGroup: (id: string, parentId: string | null) => Promise<void>;
   onDeleteGroup: (id: string) => Promise<void>;
   onMoveDevices: (deviceIds: string[], departmentId: string | null) => Promise<void>;
+  onRenameDevice: (deviceId: string, name: string) => Promise<void>;
   onAddDevice: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -270,11 +271,15 @@ export function DeviceTree({
     }
   }
 
-  // ---- group edit actions --------------------------------------------------
-  async function commitRename(id: string) {
+  // ---- rename (groups and devices share one inline editor) -----------------
+  // `renaming` holds the id being edited; ids are UUIDs on both sides so a
+  // single slot can't collide. The kind decides which handler commits it.
+  async function commitRename(id: string, kind: 'group' | 'device' = 'group') {
     const name = draftName.trim();
     setRenaming(null);
-    if (name) await onRenameGroup(id, name);
+    if (!name) return;
+    if (kind === 'device') await onRenameDevice(id, name);
+    else await onRenameGroup(id, name);
   }
   async function commitCreate() {
     const name = draftName.trim();
@@ -310,15 +315,37 @@ export function DeviceTree({
           onChange={() => setMany([d.id], !checked.has(d.id))}
           label={`Select ${displayName(d)}`}
         />
-        <button onClick={() => onSelect(d.id)} className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot.cls}`} title={dot.title} />
-          <span className={`truncate ${active ? 'font-medium' : ''}`}>{displayName(d)}</span>
-          {pos && pos.speedKph > 0 && (
-            <span className="ml-auto shrink-0 tabular-nums text-fg-subtle">{pos.speedKph}</span>
-          )}
-        </button>
+        {renaming === d.id ? (
+          <input
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onBlur={() => void commitRename(d.id, 'device')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void commitRename(d.id, 'device');
+              if (e.key === 'Escape') setRenaming(null);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Rename ${displayName(d)}`}
+            className="min-w-0 flex-1 rounded border border-brand bg-surface px-1 py-0.5 text-xs text-fg outline-none"
+          />
+        ) : (
+          <button
+            onClick={() => onSelect(d.id)}
+            onDoubleClick={(e) => { e.preventDefault(); setDraftName(d.name ?? ''); setRenaming(d.id); }}
+            title="Double-click to rename"
+            className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
+          >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot.cls}`} title={dot.title} />
+            <span className={`truncate ${active ? 'font-medium' : ''}`}>{displayName(d)}</span>
+            {pos && pos.speedKph > 0 && (
+              <span className="ml-auto shrink-0 tabular-nums text-fg-subtle">{pos.speedKph}</span>
+            )}
+          </button>
+        )}
         <RowMenu
           items={[
+            { label: 'Rename', onClick: () => { setDraftName(d.name ?? ''); setRenaming(d.id); } },
             { label: 'Show on map', onClick: () => onSelect(d.id) },
             { label: 'Move to…', onClick: () => setMany([d.id], true) },
             ...(d.departmentId ? [{ label: 'Remove from group', onClick: () => void onMoveDevices([d.id], null) }] : []),

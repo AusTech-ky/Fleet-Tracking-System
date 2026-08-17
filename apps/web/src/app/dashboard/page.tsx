@@ -263,6 +263,7 @@ export default function Dashboard() {
             onMoveGroup={moveGroup}
             onDeleteGroup={deleteGroup}
             onMoveDevices={moveDevices}
+            onRenameDevice={renameDevice}
             onAddDevice={() => { setAddDeviceOpen(true); setSidebarOpen(false); }}
           />
         </aside>

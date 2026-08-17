@@ -74,10 +74,16 @@ export function DeviceDetail({
             <button
               onClick={() => { setDraft(device.name ?? ''); setEditing(true); }}
               title="Rename device"
-              className="group flex w-full items-center gap-1 text-left"
+              aria-label="Rename device"
+              className="group flex w-full items-center gap-1.5 rounded-md text-left hover:bg-surface-2"
             >
               <span className="truncate text-sm font-semibold text-fg">{device.name?.trim() || device.model}</span>
-              <span className="shrink-0 text-xs text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100">✎</span>
+              {/* Always visible — a hover-only pencil is undiscoverable, and on
+                  touch there is no hover at all. */}
+              <span className="shrink-0 text-xs text-fg-subtle group-hover:text-fg" aria-hidden>✎</span>
+              {!device.name?.trim() && (
+                <span className="ml-auto shrink-0 rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-medium text-brand">name it</span>
+              )}
             </button>
           )}
           <div className="mt-0.5 truncate font-mono text-[11px] text-fg-subtle">{device.model} · {device.imei}</div>

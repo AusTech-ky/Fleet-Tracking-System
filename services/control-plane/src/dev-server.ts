@@ -15,12 +15,18 @@ import { DEFAULT_ALERT_CONFIG } from './domain/entities';
 import type { InMemoryBus } from './integrations/in-memory';
 
 /**
- * Demo / local-dev server. Boots the control-plane fully in-memory (no Postgres
- * or Redis), seeds a tenant + a handful of FTC927 devices around George Town,
- * and simulates them moving — pushing telemetry onto the in-memory bus so the
- * live map, history, and WebSocket feed all have real data to show.
+ * FAKE-DATA demo server — NOT the normal dev environment.
  *
- *   npm run demo   →   http://localhost:3000   (login: demo@fleet.ky / password123)
+ * Boots the control-plane fully in-memory (no Postgres or Redis), invents a
+ * tenant plus four imaginary FTC927 devices around George Town, and animates
+ * them. Nothing here is real and nothing persists. It exists only for offline
+ * UI work when the live database is unreachable.
+ *
+ * For day-to-day dev, use  scripts/dev-live.ps1  — it runs the real
+ * control-plane against the production database, so dev shows exactly what
+ * the live site shows.
+ *
+ *   npm run demo:fake-data   →   http://localhost:3000   (demo@fleet.ky / password123)
  */
 const START: Array<[string, number, number]> = [
   ['860000000000001', -81.383, 19.313],

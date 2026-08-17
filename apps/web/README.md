@@ -70,7 +70,8 @@ Town, markers updating every 2s over the live socket, route rendered on select.
 
 ```bash
 # 1) start the demo backend (in-memory: no Postgres/Redis needed)
-cd ../../services/control-plane && npm run build && npm run demo
+# Fake-data demo (offline UI work only). For real data use scripts/dev-live.ps1
+cd ../../services/control-plane && npm run build && npm run demo:fake-data
 #    → http://localhost:3000  (login: demo@fleet.ky / password123)
 
 # 2) start the web app

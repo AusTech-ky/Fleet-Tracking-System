@@ -11,6 +11,19 @@ export function displayName(d: Device): string {
 /** Pseudo-group id for devices with no department. Never sent to the API as-is. */
 const UNGROUPED = '__ungrouped__';
 
+/**
+ * Indent geometry, in px. A group row spends its first ~16px on the chevron, so
+ * a device indented by one plain step would put its checkbox at the same x as
+ * its parent's — the nesting reads as flat. DEVICE_INSET steps devices past the
+ * chevron *and* one level in, landing them level with a subgroup at the same
+ * depth, which is what they are.
+ */
+const INDENT = 16;
+const ROW_PAD = 4;
+const DEVICE_INSET = 32;
+const groupPad = (depth: number) => depth * INDENT + ROW_PAD;
+const devicePad = (depth: number) => depth * INDENT + ROW_PAD + DEVICE_INSET;
+
 /** What a drag is carrying. Kept in a ref — dataTransfer is only used to satisfy HTML5 DnD. */
 type DragPayload =
   | { kind: 'devices'; ids: string[] }
@@ -285,11 +298,13 @@ export function DeviceTree({
         draggable
         onDragStart={(e) => startDeviceDrag(e, d)}
         onDragEnd={() => { drag.current = null; setDropTarget(null); }}
-        style={{ paddingLeft: depth * 12 + 8 }}
-        className={`group flex cursor-grab items-center gap-1.5 rounded pr-1 text-xs active:cursor-grabbing ${
+        style={{ paddingLeft: devicePad(depth) }}
+        className={`group relative flex cursor-grab items-center gap-1.5 rounded pr-1 text-xs active:cursor-grabbing ${
           active ? 'bg-brand/10 text-fg' : 'text-fg-muted hover:bg-surface-2'
         }`}
       >
+        {/* guide line linking the device back to its group's chevron column */}
+        <span aria-hidden className="absolute bottom-0 top-0 w-px bg-border" style={{ left: groupPad(depth) + 7 }} />
         <TriCheck
           state={checked.has(d.id) ? 'on' : 'off'}
           onChange={() => setMany([d.id], !checked.has(d.id))}
@@ -328,7 +343,7 @@ export function DeviceTree({
           onDragOver={(e) => { if (dropAllowed(n.id)) { e.preventDefault(); setDropTarget(n.id); } }}
           onDragLeave={() => setDropTarget((t) => (t === n.id ? null : t))}
           onDrop={(e) => { e.preventDefault(); void handleDrop(n.id); }}
-          style={{ paddingLeft: depth * 12 + 4 }}
+          style={{ paddingLeft: groupPad(depth) }}
           className={`flex items-center gap-1 rounded pr-1 text-xs ${
             isTarget ? 'bg-brand/15 ring-1 ring-brand/40' : 'hover:bg-surface-2'
           }`}
@@ -383,7 +398,7 @@ export function DeviceTree({
         {open && (
           <div>
             {addingUnder === n.id && (
-              <div style={{ paddingLeft: (depth + 1) * 12 + 8 }} className="py-1 pr-1">
+              <div style={{ paddingLeft: groupPad(depth + 1) }} className="py-1 pr-1">
                 <Input
                   autoFocus
                   placeholder="Subgroup name"
@@ -401,7 +416,7 @@ export function DeviceTree({
             {n.children.map((c) => renderNode(c, depth + 1))}
             {n.devices.map((d) => renderDevice(d, depth + 1))}
             {n.subtreeDevices.length === 0 && n.children.length === 0 && !q && (
-              <p style={{ paddingLeft: (depth + 1) * 12 + 8 }} className="py-1 text-[11px] text-fg-subtle">
+              <p style={{ paddingLeft: devicePad(depth) }} className="py-1 text-[11px] text-fg-subtle">
                 Empty — drag devices here
               </p>
             )}

@@ -40,7 +40,15 @@ interface Normalized {
 @Injectable()
 export class TelemetryConsumer implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(TelemetryConsumer.name);
-  private readonly imeiCache = new Map<string, { tenantId: string; deviceId: string } | null>();
+  /**
+   * IMEI → device lookup cache. Positive hits are kept for the process lifetime
+   * (a device's tenant/id never change). Negative hits — IMEI has no device row
+   * *yet* — carry an expiry: a tracker often starts transmitting before the
+   * operator finishes provisioning it, and a permanent `null` would leave that
+   * device invisible until the next restart. Seen in production 2026-08-17.
+   */
+  private readonly imeiCache = new Map<string, { ref: { tenantId: string; deviceId: string } | null; expiresAt: number }>();
+  private readonly NEGATIVE_CACHE_MS = 10_000;
   private readonly geofenceCache = new Map<string, { at: number; fences: Geofence[] }>();
   private readonly configCache = new Map<string, { at: number; config: AlertConfig }>();
   private readonly alertEngine = new AlertEngine(randomUUID);
@@ -150,10 +158,14 @@ export class TelemetryConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   private async resolveDevice(imei: string) {
-    if (this.imeiCache.has(imei)) return this.imeiCache.get(imei)!;
+    const hit = this.imeiCache.get(imei);
+    if (hit && (hit.ref !== null || Date.now() < hit.expiresAt)) return hit.ref;
     const device = await this.devices.findByImei(imei);
     const ref = device ? { tenantId: device.tenantId, deviceId: device.id } : null;
-    this.imeiCache.set(imei, ref);
+    this.imeiCache.set(imei, {
+      ref,
+      expiresAt: ref ? Number.POSITIVE_INFINITY : Date.now() + this.NEGATIVE_CACHE_MS,
+    });
     return ref;
   }
 

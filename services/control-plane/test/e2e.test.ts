@@ -152,6 +152,38 @@ test('telemetry consumer persists positions and serves latest + history', async 
   assert.equal(history.body[0].ts, '2026-07-24T10:00:00.000Z', 'history ascending');
 });
 
+test('a device that transmits BEFORE it is provisioned becomes visible once it is', async () => {
+  // Real-world sequence (seen in production 2026-08-17): the tracker is powered
+  // on and starts sending before the operator finishes the Add Device form. The
+  // consumer must not remember "unknown IMEI" forever — that left the device
+  // invisible until the API was restarted.
+  const token = await newTenant('Early Co', 'admin@early.ky');
+  const IMEI = '860000000009999';
+  const bus = app.get<InMemoryBus>(TOKENS.TelemetryBus);
+  const mk = (ts: string) => ({
+    imei: IMEI, ts,
+    data: JSON.stringify({ imei: IMEI, ts, latitude: 19.3, longitude: -81.37, altitude: 0,
+      heading: 0, speedKph: 10, satellites: 8, fields: { ignition: 1 }, attrs: {} }),
+  });
+
+  // 1) telemetry arrives for an IMEI nobody has provisioned → skipped, and the
+  //    consumer caches the miss.
+  await bus.push([mk('2026-07-24T10:00:00.000Z')]);
+
+  // 2) operator provisions it.
+  const dev = await http('POST', '/devices', { token, body: { imei: IMEI, model: 'FTC927' } });
+  assert.equal(dev.status, 201);
+
+  // 3) next telemetry must land — after the negative-cache window, not never.
+  //    (Consumer's NEGATIVE_CACHE_MS is 10s; wait it out rather than reach into internals.)
+  await new Promise((r) => setTimeout(r, 10_500));
+  await bus.push([mk('2026-07-24T10:01:00.000Z')]);
+
+  const latest = await http('GET', `/devices/${dev.body.id}/latest`, { token });
+  assert.equal(latest.status, 200, 'device that transmitted before provisioning is now visible');
+  assert.equal(latest.body.ts, '2026-07-24T10:01:00.000Z');
+});
+
 test('live feed: WS client receives a tenant-scoped position push', async () => {
   const token = await newTenant('Live Co', 'admin@live.ky');
   const dev = await http('POST', '/devices', { token, body: { imei: '860000000000777', model: 'FTC927' } });

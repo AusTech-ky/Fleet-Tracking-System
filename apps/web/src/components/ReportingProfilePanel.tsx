@@ -144,25 +144,32 @@ export function ReportingProfilePanel({ device, open, onClose }: { device: Devic
         read back to confirm. The device must be online.
       </p>
 
-      {/* profile selector */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <div className="flex overflow-hidden rounded-lg border border-border">
-          {NETWORKS.map((n) => (
-            <button key={n.id} title={n.hint} disabled={busy} onClick={() => setNetwork(n.id)}
-              className={`px-2.5 py-1 ${network === n.id ? 'bg-brand text-brand-fg' : 'text-fg-muted hover:bg-surface-2'}`}>
-              {n.label}
-            </button>
-          ))}
+      {/* profile selector — two labelled segmented controls on one row, no wrapping */}
+      <div className="mb-3 grid grid-cols-[auto_auto_1fr] items-end gap-3 text-xs">
+        <div>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">Network</div>
+          <div className="flex overflow-hidden rounded-lg border border-border">
+            {NETWORKS.map((n) => (
+              <button key={n.id} title={n.hint} disabled={busy} onClick={() => setNetwork(n.id)}
+                className={`whitespace-nowrap px-3 py-1.5 transition-colors ${network === n.id ? 'bg-brand text-brand-fg' : 'text-fg-muted hover:bg-surface-2'}`}>
+                {n.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex overflow-hidden rounded-lg border border-border">
-          {MOTIONS.map((m) => (
-            <button key={m.id} disabled={busy} onClick={() => setMotion(m.id)}
-              className={`px-2.5 py-1 ${motion === m.id ? 'bg-brand text-brand-fg' : 'text-fg-muted hover:bg-surface-2'}`}>
-              {m.label}
-            </button>
-          ))}
+        <div>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">Vehicle is</div>
+          <div className="flex overflow-hidden rounded-lg border border-border">
+            {MOTIONS.map((m) => (
+              <button key={m.id} disabled={busy} onClick={() => setMotion(m.id)}
+                className={`whitespace-nowrap px-3 py-1.5 transition-colors ${motion === m.id ? 'bg-brand text-brand-fg' : 'text-fg-muted hover:bg-surface-2'}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <button onClick={() => void read()} disabled={busy} className="ml-auto rounded-md px-2 py-1 text-fg-muted hover:bg-surface-2 hover:text-fg">
+        <button onClick={() => void read()} disabled={busy}
+          className="justify-self-end whitespace-nowrap rounded-md px-2 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg disabled:opacity-50">
           ↻ Re-read
         </button>
       </div>
@@ -189,21 +196,30 @@ export function ReportingProfilePanel({ device, open, onClose }: { device: Devic
           const changed = raw !== '' && Number.isInteger(n) && held[f.key] !== undefined && held[f.key] !== n;
           const bad = changed && outOfRange(f, raw); // only flag values the user typed
           return (
-            <label key={f.key} className="grid grid-cols-[7.5rem_1fr_auto] items-center gap-2 text-xs">
-              <span className="text-fg-muted" title={f.hint}>{f.label}</span>
-              <input
-                inputMode="numeric"
-                value={raw}
-                disabled={busy || status.kind === 'offline'}
-                placeholder={held[f.key] === undefined ? '—' : String(held[f.key])}
-                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                className={`w-full rounded-md border bg-surface px-2 py-1 text-fg outline-none focus:ring-2 focus:ring-brand/30 ${
+            <div key={f.key} className="flex flex-col gap-0.5">
+              <label className="flex items-center gap-3 text-sm">
+                <span className="w-32 shrink-0 text-fg-muted" title={f.hint}>{f.label}</span>
+                {/* Input + unit as one control: the unit sits inside the field's
+                    right edge, so it can't drift away from its number. */}
+                <span className={`flex min-w-0 flex-1 items-center rounded-md border bg-surface focus-within:ring-2 focus-within:ring-brand/30 ${
                   bad ? 'border-danger' : changed ? 'border-brand' : 'border-border'
-                }`}
-              />
-              <span className="w-14 text-fg-subtle">{f.unit}</span>
-              {bad && <span className="col-span-3 -mt-1 text-[11px] text-danger">Must be {f.min}–{f.max}</span>}
-            </label>
+                }`}>
+                  <input
+                    inputMode="numeric"
+                    value={raw}
+                    disabled={busy || status.kind === 'offline'}
+                    placeholder={held[f.key] === undefined ? '—' : String(held[f.key])}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                    className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-right tabular-nums text-fg outline-none disabled:opacity-60"
+                  />
+                  <span className="shrink-0 border-l border-border px-2 py-1.5 text-xs text-fg-subtle">{f.unit}</span>
+                </span>
+              </label>
+              {bad && <span className="pl-[8.75rem] text-[11px] text-danger">Must be {f.min}–{f.max}</span>}
+              {!bad && changed && held[f.key] !== undefined && (
+                <span className="pl-[8.75rem] text-[11px] text-fg-subtle">was {held[f.key]} {f.unit}</span>
+              )}
+            </div>
           );
         })}
       </div>

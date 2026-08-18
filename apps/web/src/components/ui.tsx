@@ -1,5 +1,6 @@
 'use client';
 import { forwardRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 /** Token-based primitives (theme-aware via CSS variables). */
 
@@ -52,8 +53,12 @@ export function Modal({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-  return (
+  if (!open || typeof document === 'undefined') return null;
+  // Portal to <body>: `position: fixed` is NOT viewport-relative when any
+  // ancestor has a transform, filter, or backdrop-filter — those create a new
+  // containing block. The device card uses backdrop-blur, so a modal rendered
+  // inside it was "fixed" to a 288px card and squashed to 254px wide.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -65,9 +70,10 @@ export function Modal({
           <button onClick={onClose} aria-label="Close"
             className="rounded-md px-1.5 text-fg-subtle hover:bg-surface-2 hover:text-fg">✕</button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="max-h-[80vh] overflow-y-auto p-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

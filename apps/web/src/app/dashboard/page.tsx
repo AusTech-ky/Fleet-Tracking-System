@@ -17,6 +17,7 @@ import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAction } from '@/components/Toast';
 import type { Position, DrawMode, DrawnShape } from '@/lib/types';
+import { motionState } from '@/lib/motion';
 
 const MapView = dynamic(() => import('@/components/MapView').then((m) => m.MapView), {
   ssr: false,
@@ -177,7 +178,13 @@ export default function Dashboard() {
 
   const online = state === 'open';
   const deviceCount = devicesQuery.data?.length ?? 0;
-  const movingCount = useMemo(() => Object.values(positions).filter((p) => p.speedKph > 0).length, [positions]);
+  // Same classifier as the map markers and the fleet-status tiles, so this
+  // number always equals the count of green dots (speed alone would call a
+  // vehicle whose last fix was hours ago "moving").
+  const movingCount = useMemo(
+    () => (devicesQuery.data ?? []).filter((d) => motionState(d, positions[d.id]) === 'moving').length,
+    [devicesQuery.data, positions],
+  );
   const history = historyQuery.data ?? [];
   const selectedDevice = devicesQuery.data?.find((d) => d.id === selectedId) ?? null;
   const selectedGroup = departmentsQuery.data?.find((g) => g.id === selectedDevice?.departmentId)?.name;

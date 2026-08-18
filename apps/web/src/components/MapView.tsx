@@ -6,7 +6,7 @@ import { DEFAULT_CENTER, DEFAULT_ZOOM, DEFAULT_BASEMAP } from '@/lib/config';
 import { circleToPolygon, haversineMeters } from '@/lib/geo';
 import { BASEMAPS, BASEMAP_LAYER_IDS, BASEMAP_VISIBLE, buildBaseStyle, type BasemapId } from '@/lib/basemaps';
 import type { Position, Geofence, DrawMode, DrawnShape, Device } from '@/lib/types';
-import { motionState, MOTION_HEX, MOTION_LABEL } from '@/lib/motion';
+import { motionState, MOTION_HEX, MOTION_LABEL, type MotionState } from '@/lib/motion';
 
 interface Props {
   positions: Record<string, Position>;
@@ -291,18 +291,66 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
         fitDisabled={Object.keys(positions).length === 0}
       />
 
-      {/* Motion legend — the colours must be self-explaining on the map itself. */}
-      <div
-        aria-label="Vehicle status legend"
-        className="pointer-events-none absolute bottom-8 right-2 z-10 flex items-center gap-3 rounded-lg border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] text-fg-muted shadow-sm backdrop-blur"
-      >
-        {(['moving', 'stopped', 'parked', 'inactive'] as const).map((s) => (
-          <span key={s} className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full border border-white/70" style={{ background: MOTION_HEX[s] }} />
+      {/* Fleet status summary — legend + live counts, top-left. Slides right
+          when the device card occupies that corner. */}
+      <FleetStatus devices={devices} positions={positions} clock={clock} offsetForCard={!!selectedId} />
+    </div>
+  );
+}
+
+/**
+ * Fleet status summary: one tile per motion state with a live count, using the
+ * SAME classifier as the markers and the sidebar dots — so a tile's number is
+ * exactly the number of dots of that colour on the map. Doubles as the legend.
+ *
+ * `clock` is the map's 30s ticker: "inactive" is time-based, so counts must
+ * re-derive even when no new position arrives.
+ */
+function FleetStatus({
+  devices, positions, clock, offsetForCard,
+}: {
+  devices: Device[];
+  positions: Record<string, Position>;
+  clock: number;
+  /** the device detail card is open in the top-left; shift right of it */
+  offsetForCard: boolean;
+}) {
+  const counts = useMemo(() => {
+    const now = Date.now();
+    const c: Record<MotionState, number> = { moving: 0, stopped: 0, parked: 0, inactive: 0 };
+    for (const d of devices) c[motionState(d, positions[d.id], now)]++;
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices, positions, clock]);
+  const total = devices.length;
+
+  return (
+    <div
+      role="status"
+      aria-label="Fleet status"
+      // Inline `left`, not a Tailwind arbitrary class: a value that only appears
+      // inside a template literal isn't seen by the JIT scanner and gets no CSS,
+      // which left the summary sitting under the device card.
+      // 0.5rem gap + 18rem card (w-72) + 0.5rem gap = 19rem.
+      // No `transition-[left]`: with that class present, an inline `left` change
+      // never took effect in Chrome (verified by removing the class live — the
+      // element moved instantly). A snap is fine; a stuck summary is not.
+      style={{ left: offsetForCard ? '19rem' : '0.5rem' }}
+      className="pointer-events-none absolute top-2 z-10 flex items-stretch overflow-hidden rounded-xl border border-border bg-surface/95 shadow-lg backdrop-blur"
+    >
+      {(['moving', 'stopped', 'parked', 'inactive'] as const).map((s, i) => (
+        <div
+          key={s}
+          className={`flex min-w-[5.25rem] flex-col items-center px-3 py-2 ${i > 0 ? 'border-l border-border' : ''}`}
+          title={`${counts[s]} of ${total} ${MOTION_LABEL[s].toLowerCase()}`}
+        >
+          <span className="text-2xl font-semibold leading-none tabular-nums text-fg">{counts[s]}</span>
+          <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
+            <span className="inline-block h-2.5 w-2.5 rounded-full ring-1 ring-white/70" style={{ background: MOTION_HEX[s] }} />
             {MOTION_LABEL[s]}
           </span>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
-  "name": "FleetView — Live Tracking",
-  "short_name": "FleetView",
+  "name": "SwiftView — Live Tracking",
+  "short_name": "SwiftView",
   "description": "Real-time fleet tracking",
   "start_url": "/",
   "display": "standalone",

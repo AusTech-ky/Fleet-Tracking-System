@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from '@/components/Providers';
 
 export const metadata: Metadata = {
-  title: 'FleetView — Live Tracking',
+  title: 'SwiftView — Live Tracking',
   description: 'Real-time fleet tracking',
   manifest: '/manifest.webmanifest',
 };

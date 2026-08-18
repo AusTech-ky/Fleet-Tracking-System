@@ -94,7 +94,7 @@ export default function LoginPage() {
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-brand-fg shadow-sm">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 3l6 16-6-3-6 3z" /></svg>
           </div>
-          <span className="text-xl font-semibold tracking-tight">FleetView</span>
+          <span className="text-xl font-semibold tracking-tight">SwiftView</span>
         </div>
 
         <Card className="p-6 shadow-lg">

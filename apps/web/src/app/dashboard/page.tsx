@@ -54,6 +54,18 @@ export default function Dashboard() {
     if (ready && !isAuthed) router.replace('/login');
   }, [ready, isAuthed, router]);
 
+  // Deep-links from the Overview page: ?status=<state> pre-applies the filter,
+  // ?device=<id> selects a device. Read once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search);
+    const st = q.get('status');
+    if (st && ['moving', 'stopped', 'parked', 'inactive'].includes(st)) setStatusFilter(new Set([st as MotionState]));
+    const dev = q.get('device');
+    if (dev) setSelectedId(dev);
+    if (st || dev) window.history.replaceState(null, '', '/dashboard'); // clean the URL
+  }, []);
+
   /**
    * Full-screen focus mode: hide the top menu and sidebar and let the map fill
    * the screen. Backed by the browser Fullscreen API so Esc exits natively;
@@ -290,7 +302,7 @@ export default function Dashboard() {
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand text-brand-fg">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 3l6 16-6-3-6 3z" /></svg>
             </div>
-            <span className="font-semibold tracking-tight">FleetView</span>
+            <span className="font-semibold tracking-tight">SwiftView</span>
           </div>
           <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-2 py-1 text-xs text-fg-muted">
             <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-success' : 'bg-fg-subtle'}`} />
@@ -303,6 +315,7 @@ export default function Dashboard() {
         </div>
 
         <nav className="flex items-center gap-1 text-sm">
+          <Link href="/overview" className="rounded-lg px-2.5 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg">Overview</Link>
           <Link href="/reports" className="rounded-lg px-2.5 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg">Reports</Link>
           <Link href="/settings" className="rounded-lg px-2.5 py-1.5 text-fg-muted hover:bg-surface-2 hover:text-fg">Settings</Link>
           <button

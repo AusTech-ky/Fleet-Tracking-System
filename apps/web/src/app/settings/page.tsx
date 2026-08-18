@@ -42,7 +42,7 @@ export default function SettingsPage() {
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="h-5 w-5 rounded bg-brand" />
-          <span className="font-semibold">FleetView</span>
+          <span className="font-semibold">SwiftView</span>
           <span className="text-fg-muted">/ Settings</span>
         </div>
         <Link href="/dashboard" className="text-sm text-fg-muted hover:text-fg">← Back to map</Link>

@@ -36,6 +36,23 @@ export interface HotState {
 }
 
 /**
+ * Downlink: send a GPRS (Codec 12) command to a device over the socket it is
+ * currently reporting on, and return its text reply. Implemented by an HTTP
+ * client to the ingestion service's internal /commands endpoint. Throws a
+ * DeviceCommandError with a `code` the API can map to a status.
+ */
+export interface DeviceCommander {
+  send(imei: string, command: string): Promise<string>;
+}
+export type DeviceCommandErrorCode = 'not_connected' | 'timeout' | 'disabled' | 'unavailable' | 'rejected';
+export class DeviceCommandError extends Error {
+  constructor(public readonly code: DeviceCommandErrorCode, message: string) {
+    super(message);
+    this.name = 'DeviceCommandError';
+  }
+}
+
+/**
  * Pushes live position updates to connected clients (the live map). Fan-out is
  * tenant-scoped. In-process here; multi-node would bridge via Redis pub/sub.
  */

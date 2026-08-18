@@ -16,6 +16,11 @@ export interface Config {
   dedupeTtlSeconds: number;
   activeDataLinkTimeoutSec: number; // recommend 259200 on device for downlink
   shutdownGraceMs: number; // how long to let sockets drain before force-close
+  /**
+   * Shared secret the control-plane presents to POST /commands (downlink to a
+   * device). Empty disables the endpoint entirely — never leave it open.
+   */
+  commandSecret: string;
 }
 
 function int(env: NodeJS.ProcessEnv, name: string, def: number): number {
@@ -49,5 +54,6 @@ export function loadConfig(env = process.env): Config {
     dedupeTtlSeconds: int(env, 'DEDUPE_TTL_SECONDS', 86_400),
     activeDataLinkTimeoutSec: int(env, 'ACTIVE_DATALINK_TIMEOUT_SEC', 259_200),
     shutdownGraceMs: int(env, 'SHUTDOWN_GRACE_MS', 15_000),
+    commandSecret: env.INGEST_COMMAND_SECRET ?? '',
   };
 }

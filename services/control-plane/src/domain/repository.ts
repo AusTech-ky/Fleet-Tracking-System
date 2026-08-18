@@ -124,4 +124,5 @@ export const TOKENS = {
   AllowListPublisher: 'AllowListPublisher',
   TelemetryBus: 'TelemetryBus',
   RealtimePublisher: 'RealtimePublisher',
+  DeviceCommander: 'DeviceCommander',
 } as const;

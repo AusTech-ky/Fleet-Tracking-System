@@ -14,6 +14,7 @@ import { loadConfig } from '../src/config';
 import { TOKENS } from '../src/domain/repository';
 import { totp } from '../src/engine/totp';
 import type { InMemoryAllowList, InMemoryBus, InMemoryHotState } from '../src/integrations/in-memory';
+import type { InMemoryDeviceCommander } from '../src/integrations/device-commander';
 
 let app: INestApplication;
 let base: string;
@@ -150,6 +151,57 @@ test('telemetry consumer persists positions and serves latest + history', async 
   assert.equal(history.status, 200);
   assert.equal(history.body.length, 2);
   assert.equal(history.body[0].ts, '2026-07-24T10:00:00.000Z', 'history ascending');
+});
+
+test('remote reporting profile: read, write-then-verify, validation, offline device, roles', async () => {
+  const admin = await newTenant('Remote Cfg Co', 'admin@remotecfg.ky');
+  const IMEI = '860000000007777';
+  const dev = (await http('POST', '/devices', { token: admin, body: { imei: IMEI, model: 'FTC927' } })).body;
+  const cmd = app.get(TOKENS.DeviceCommander) as InMemoryDeviceCommander;
+  const q = 'network=home&motion=moving';
+
+  // Device offline → a clear 409, and nothing was sent.
+  cmd.disconnect(IMEI);
+  const off = await http('POST', `/devices/${dev.id}/config/reporting?${q}`, { token: admin, body: { minPeriodSec: 5 } });
+  assert.equal(off.status, 409);
+  assert.match(off.body.message, /not currently connected/i);
+
+  cmd.connect(IMEI);
+
+  // Write: the exact wiki setparam goes to the device, then it is read back and returned.
+  const w = await http('POST', `/devices/${dev.id}/config/reporting?${q}`, { token: admin, body: { minPeriodSec: 5, minDistanceM: 50, minAngleDeg: 15 } });
+  assert.equal(w.status, 201);
+  assert.equal(w.body.command, 'setparam 10050:5;10051:50;10052:15');
+  assert.equal(w.body.applied, true);
+  assert.deepEqual(w.body.values, { minPeriodSec: 5, minDistanceM: 50, minAngleDeg: 15, minSpeedDeltaKph: 0, minSavedRecords: 0, sendPeriodSec: 0 },
+    'returned values are what the device HOLDS (read back), not what we asked for');
+  const sent = cmd.sent.map((s) => s.command);
+  assert.deepEqual(sent.slice(-2), ['setparam 10050:5;10051:50;10052:15', 'getparam 10050;10051;10052;10053;10054;10055'], 'set, then verify');
+
+  // Read.
+  const r = await http('GET', `/devices/${dev.id}/config/reporting?${q}`, { token: admin });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.values.minPeriodSec, 5);
+
+  // Validation happens before anything reaches the vehicle.
+  const before = cmd.sent.length;
+  assert.equal((await http('POST', `/devices/${dev.id}/config/reporting?${q}`, { token: admin, body: { minAngleDeg: 999 } })).status, 400);
+  assert.equal((await http('POST', `/devices/${dev.id}/config/reporting?network=mars&motion=moving`, { token: admin, body: { minPeriodSec: 5 } })).status, 400);
+  assert.equal((await http('POST', `/devices/${dev.id}/config/reporting?network=home&motion=stop`, { token: admin, body: { minDistanceM: 10 } })).status, 400, 'distance is not a stop-profile setting');
+  assert.equal(cmd.sent.length, before, 'invalid requests never sent a command');
+
+  // Only admins may write; operators may read; viewers neither.
+  await http('POST', '/users', { token: admin, body: { email: 'op@remotecfg.ky', password: 'password123', role: 'operator' } });
+  await http('POST', '/users', { token: admin, body: { email: 'view@remotecfg.ky', password: 'password123', role: 'viewer' } });
+  const op = (await http('POST', '/auth/login', { body: { email: 'op@remotecfg.ky', password: 'password123' } })).body.accessToken;
+  const viewer = (await http('POST', '/auth/login', { body: { email: 'view@remotecfg.ky', password: 'password123' } })).body.accessToken;
+  assert.equal((await http('POST', `/devices/${dev.id}/config/reporting?${q}`, { token: op, body: { minPeriodSec: 5 } })).status, 403);
+  assert.equal((await http('GET', `/devices/${dev.id}/config/reporting?${q}`, { token: op })).status, 200);
+  assert.equal((await http('GET', `/devices/${dev.id}/config/reporting?${q}`, { token: viewer })).status, 403);
+
+  // Another tenant cannot touch this device at all.
+  const other = await newTenant('Other Co', 'admin@other.ky');
+  assert.equal((await http('GET', `/devices/${dev.id}/config/reporting?${q}`, { token: other })).status, 404);
 });
 
 test('/latest survives a cold hot-state cache by falling back to the DB and re-warming', async () => {

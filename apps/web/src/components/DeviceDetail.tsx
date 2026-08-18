@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from './ui';
+import { ReportingProfilePanel } from './ReportingProfilePanel';
 import { relativeTime, isStale, formatCoords, compass } from '@/lib/format';
 import type { Device, Position } from '@/lib/types';
 
@@ -27,6 +28,7 @@ export function DeviceDetail({
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -118,6 +120,14 @@ export function DeviceDetail({
 
       <div className="flex gap-1.5 border-t border-border p-2">
         <button
+          onClick={() => setConfigOpen(true)}
+          title="Reporting settings — how often this tracker sends its position"
+          aria-label="Reporting settings"
+          className="rounded-lg border border-border px-2 py-1.5 text-xs text-fg hover:bg-surface-2"
+        >
+          ⚙
+        </button>
+        <button
           onClick={onCenter}
           disabled={!position}
           className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-40"
@@ -135,6 +145,8 @@ export function DeviceDetail({
           {following ? 'Following' : 'Follow'}
         </button>
       </div>
+
+      <ReportingProfilePanel device={device} open={configOpen} onClose={() => setConfigOpen(false)} />
     </div>
   );
 }

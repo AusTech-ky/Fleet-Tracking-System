@@ -4,6 +4,16 @@
 # (a silently half-dead container is worse than a restart loop you can see).
 set -eu
 
+# Shared secret for the control-plane → ingestion downlink channel (remote
+# device configuration). Both services are children of this script and inherit
+# it; it never has to leave the container. Generated fresh per boot unless the
+# operator pins one — a random value is strictly safer than a well-known default.
+if [ -z "${INGEST_COMMAND_SECRET:-}" ]; then
+  INGEST_COMMAND_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')"
+  export INGEST_COMMAND_SECRET
+  echo "[start] INGEST_COMMAND_SECRET not set — generated a per-boot secret"
+fi
+
 echo "[start] running database migrations…"
 node /app/services/control-plane/dist/src/migrate.js
 

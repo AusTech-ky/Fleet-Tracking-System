@@ -12,6 +12,14 @@ export interface Config {
   throttleTtlMs: number;
   /** allowed CORS origins; empty = reflect any origin */
   corsOrigins: string[];
+  /**
+   * Ingestion service's internal command endpoint (POST /commands) and the
+   * shared secret it expects. null URL = remote device configuration disabled.
+   * In the all-in-one container both services share localhost, so the default
+   * points at ingestion's admin port there.
+   */
+  ingestCommandUrl: string | null;
+  ingestCommandSecret: string;
 }
 
 export function loadConfig(env = process.env): Config {
@@ -32,5 +40,7 @@ export function loadConfig(env = process.env): Config {
     throttleLimit: Number(env.THROTTLE_LIMIT ?? 300),
     throttleTtlMs: Number(env.THROTTLE_TTL_MS ?? 60_000),
     corsOrigins: (env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    ingestCommandUrl: env.INGEST_COMMAND_URL ?? (useInMemory ? null : 'http://127.0.0.1:9100/commands'),
+    ingestCommandSecret: env.INGEST_COMMAND_SECRET ?? '',
   };
 }

@@ -55,6 +55,9 @@ services:
       HTTP_PORT: '9100'
       REDIS_URL: redis://redis:6379
       WAL_DIR: /wal
+      # Remote device configuration: the control-plane relays Codec 12 commands
+      # through POST /commands on the admin port. Same secret on both services.
+      INGEST_COMMAND_SECRET: ${INGEST_COMMAND_SECRET:?set INGEST_COMMAND_SECRET in .env}
       MAX_CONNECTIONS: ${INGEST_MAX_CONNECTIONS:-50000}
       SHUTDOWN_GRACE_MS: '15000'
       # TLS_ENABLED=true requires certs mounted below AND device-side certs.
@@ -85,6 +88,8 @@ services:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/fleet
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
+      INGEST_COMMAND_URL: http://ingestion:9100/commands
+      INGEST_COMMAND_SECRET: ${INGEST_COMMAND_SECRET:?set INGEST_COMMAND_SECRET in .env}
       THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
       SMTP_URL: ${SMTP_URL:-}
       TRIP_STOP_MIN_SEC: ${TRIP_STOP_MIN_SEC:-180}

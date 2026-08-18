@@ -151,6 +151,64 @@ test('Downlink: Codec 12 command round-trips to a response', async () => {
   }
 });
 
+test('Command endpoint: HTTP setparam → Codec 12 to device → reply back to caller', async () => {
+  const SECRET = 'test-command-secret';
+  const { app, walDir } = await startApp({ INGEST_COMMAND_SECRET: SECRET });
+  try {
+    const dev = new Device();
+    await dev.connect(app.tcp.port);
+    dev.write(encodeImei(IMEI));
+    await dev.read(1);
+    const port = (app.health.address as net.AddressInfo).port;
+    const url = `http://127.0.0.1:${port}/commands`;
+    const post = (body: unknown, auth?: string) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
+        body: JSON.stringify(body),
+      });
+
+    // Auth is enforced before anything reaches a device.
+    assert.equal((await post({ imei: IMEI, command: 'getinfo' })).status, 401, 'no secret → 401');
+    assert.equal((await post({ imei: IMEI, command: 'getinfo' }, 'wrong')).status, 401, 'wrong secret → 401');
+    // Input is validated.
+    assert.equal((await post({ imei: '123', command: 'getinfo' }, SECRET)).status, 400, 'bad imei → 400');
+    assert.equal((await post({ imei: IMEI, command: '' }, SECRET)).status, 400, 'empty command → 400');
+    // A device that isn't on the wire can't be commanded.
+    assert.equal((await post({ imei: '999999999999999', command: 'getinfo' }, SECRET)).status, 404, 'not connected → 404');
+
+    // The real thing: setparam over the same socket the device reports on.
+    const resPromise = post({ imei: IMEI, command: 'setparam 10050:5;10051:50' }, SECRET);
+    const cmdFrame = await dev.readFramed();
+    assert.equal(decodeCodec12(cmdFrame).payload, 'setparam 10050:5;10051:50', 'device received the exact command');
+    dev.write(encodeResponse('New value 10050:5;10051:50 was successfully applied'));
+    const res = await resPromise;
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.reply, 'New value 10050:5;10051:50 was successfully applied');
+    assert.equal(body.imei, IMEI);
+    dev.end();
+  } finally {
+    await app.stop();
+    rmSync(walDir, { recursive: true, force: true });
+  }
+});
+
+test('Command endpoint is disabled (503) when no secret is configured', async () => {
+  const { app, walDir } = await startApp(); // no INGEST_COMMAND_SECRET
+  try {
+    const port = (app.health.address as net.AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${port}/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer anything' },
+      body: JSON.stringify({ imei: IMEI, command: 'getinfo' }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    await app.stop();
+    rmSync(walDir, { recursive: true, force: true });
+  }
+});
+
 test('UDP: datagram decoded, durable-write, ack echoes packet id', async () => {
   const { app, capture, walDir } = await startApp();
   try {

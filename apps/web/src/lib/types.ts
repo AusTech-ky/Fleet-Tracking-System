@@ -107,6 +107,25 @@ export interface BillingSummary {
   plans: Plan[];
 }
 
+/** Remote device configuration — Teltonika "records profile" (reporting cadence). */
+export type NetworkMode = 'home' | 'roaming' | 'unknown';
+export type MotionMode = 'stop' | 'moving';
+export interface ReportingProfile {
+  minPeriodSec: number;
+  minDistanceM: number;
+  minAngleDeg: number;
+  minSpeedDeltaKph: number;
+  minSavedRecords: number;
+  sendPeriodSec: number;
+}
+export interface ReportingProfileResult {
+  network: NetworkMode;
+  motion: MotionMode;
+  /** what the device reports it holds; fields absent if the device didn't return them */
+  values: Partial<ReportingProfile>;
+  raw: string;
+}
+
 /** WS envelope from the control-plane /rt feed. */
 export type RtMessage =
   | { type: 'connected'; tenantId: string }

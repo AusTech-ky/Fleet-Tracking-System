@@ -38,6 +38,8 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { DevicesController } from './modules/devices/devices.controller';
 import { DevicesService } from './modules/devices/devices.service';
+import { DeviceConfigController, DeviceConfigService } from './modules/devices/device-config';
+import { HttpDeviceCommander, InMemoryDeviceCommander } from './integrations/device-commander';
 import { VehiclesController, VehiclesService } from './modules/vehicles/vehicles';
 import { TelemetryConsumer } from './modules/telemetry/telemetry.consumer';
 import { PositionsController } from './modules/telemetry/positions.controller';
@@ -69,6 +71,7 @@ function buildInfraProviders(config: Config): Provider[] {
       { provide: TOKENS.AllowListPublisher, useValue: new InMemoryAllowList() },
       { provide: TOKENS.TelemetryBus, useValue: new InMemoryBus() },
       { provide: TOKENS.HotState, useValue: new InMemoryHotState() },
+      { provide: TOKENS.DeviceCommander, useValue: new InMemoryDeviceCommander() },
     ];
   }
   const pool = new Pool({ connectionString: config.databaseUrl! });
@@ -92,6 +95,14 @@ function buildInfraProviders(config: Config): Provider[] {
     { provide: TOKENS.AllowListPublisher, useValue: new RedisAllowList(redis) },
     { provide: TOKENS.TelemetryBus, useValue: new RedisStreamBus(redisBlocking) },
     { provide: TOKENS.HotState, useValue: new RedisHotState(redis) },
+    // Downlink to devices via ingestion's internal /commands endpoint. Null when
+    // not configured → the config API answers 503 rather than pretending.
+    {
+      provide: TOKENS.DeviceCommander,
+      useValue: config.ingestCommandUrl && config.ingestCommandSecret
+        ? new HttpDeviceCommander(config.ingestCommandUrl, config.ingestCommandSecret)
+        : null,
+    },
   ];
 }
 
@@ -117,10 +128,10 @@ export class AppModule {
       controllers: [
         AuthController, DevicesController, VehiclesController, PositionsController, HealthController,
         GeofencesController, AlertsController, ReportsController, NotificationsController, UsersController,
-        DepartmentsController, BillingController,
+        DepartmentsController, BillingController, DeviceConfigController,
       ],
       providers: [
-        AuthService, DevicesService, VehiclesService, TelemetryConsumer, AllowListBootstrap,
+        AuthService, DevicesService, VehiclesService, TelemetryConsumer, AllowListBootstrap, DeviceConfigService,
         GeofencesService, AlertsService, ReportsService, NotificationsService, UsersService, DepartmentsService,
         BillingService, FleetResolver,
         RealtimeGateway,

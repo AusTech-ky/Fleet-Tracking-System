@@ -3,6 +3,7 @@ import { getToken, clearToken, getRefreshToken, setTokens } from './auth';
 import type {
   Device, Position, Geofence, AlertEvent, Report, ReportType, ExportFormat,
   NotificationConfig, TeamUser, Role, LoginResult, Department, BillingSummary,
+  NetworkMode, MotionMode, ReportingProfile, ReportingProfileResult,
 } from './types';
 
 export interface ReportParams {
@@ -149,6 +150,16 @@ export const api = {
 
   createDevice: (body: { imei: string; model: string; name?: string | null; departmentId?: string | null }) =>
     request<Device>('/devices', { method: 'POST', body: JSON.stringify(body) }),
+
+  /** Read a tracker's reporting profile back from the device, over the air. */
+  readReportingProfile: (deviceId: string, network: NetworkMode, motion: MotionMode) =>
+    request<ReportingProfileResult>(`/devices/${deviceId}/config/reporting?network=${network}&motion=${motion}`),
+  /** Push reporting settings to the device; returns what the device now holds. */
+  writeReportingProfile: (deviceId: string, network: NetworkMode, motion: MotionMode, values: Partial<ReportingProfile>) =>
+    request<ReportingProfileResult & { applied: boolean; command: string }>(
+      `/devices/${deviceId}/config/reporting?network=${network}&motion=${motion}`,
+      { method: 'POST', body: JSON.stringify(values) },
+    ),
 
   billing: () => request<BillingSummary>('/billing'),
   subscribe: (planId: string) =>

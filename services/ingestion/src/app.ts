@@ -62,7 +62,10 @@ export class App {
 
     this.tcp = new IngestionTcpServer(config, deps, this.metrics, this.logger);
     this.udp = config.udpPort != null ? new IngestionUdpServer(config.udpPort, deps) : null;
-    this.health = new HealthServer(config.httpPort, this.metrics, () => this.started);
+    this.health = new HealthServer(config.httpPort, this.metrics, () => this.started, {
+      sender: this.tcp,
+      secret: config.commandSecret,
+    });
   }
 
   async start(): Promise<void> {

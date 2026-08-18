@@ -1,4 +1,6 @@
 export type DeviceStatus = 'provisioned' | 'active' | 'suspended' | 'retired';
+export type { AssetType } from './asset-icons';
+import type { AssetType } from './asset-icons';
 
 export interface Device {
   id: string;
@@ -6,6 +8,8 @@ export interface Device {
   imei: string;
   name: string | null;
   model: string;
+  /** asset category → map icon */
+  assetType: AssetType;
   status: DeviceStatus;
   vehicleId: string | null;
   departmentId: string | null;

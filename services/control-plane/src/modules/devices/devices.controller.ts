@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, HttpCode } from '@nestjs/common';
 import { CurrentUser, Roles, type AuthUser } from '../../common/auth';
 import { DevicesService } from './devices.service';
-import { CreateDeviceDto, UpdateDeviceStatusDto, AssignDepartmentDto, RenameDeviceDto } from './dto';
+import { CreateDeviceDto, UpdateDeviceStatusDto, AssignDepartmentDto, RenameDeviceDto, SetAssetTypeDto } from './dto';
 
 @Controller('devices')
 export class DevicesController {
@@ -10,7 +10,13 @@ export class DevicesController {
   @Post()
   @Roles('admin', 'operator')
   provision(@CurrentUser() user: AuthUser, @Body() dto: CreateDeviceDto) {
-    return this.devices.provision(user, dto.imei, dto.model, dto.departmentId, dto.name);
+    return this.devices.provision(user, dto.imei, dto.model, dto.departmentId, dto.name, dto.assetType);
+  }
+
+  @Patch(':id/asset-type')
+  @Roles('admin', 'operator')
+  setAssetType(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: SetAssetTypeDto) {
+    return this.devices.setAssetType(user, id, dto.assetType);
   }
 
   @Patch(':id/name')

@@ -97,31 +97,44 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .fleet-dot {
-  display: block;
-  width: 16px;
-  height: 16px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   border: 2px solid #fff;
   border-radius: 50%;
   background: var(--motion, #64748b);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 }
-.fleet-dot[data-motion='moving'] {
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  clip-path: polygon(50% 0%, 100% 100%, 50% 78%, 0% 100%);
+.fleet-dot > svg { display: block; }
+/* Heading: a small chevron riding on the disc's rim, rotated to the course.
+   Shown only while moving — a parked vehicle's last heading is noise. */
+.fleet-heading {
+  display: none;
+  position: absolute;
+  inset: -7px;
   transform: rotate(var(--rot, 0deg));
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+  pointer-events: none;
 }
+.fleet-heading::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid var(--motion, #64748b);
+  filter: drop-shadow(0 0 1px #fff);
+}
+.fleet-dot[data-motion='moving'] .fleet-heading { display: block; }
+
 /* Selection: highlight the pill, and ring the dot — never swap the state colour. */
 .fleet-vehicle[data-selected='true'] .fleet-pill { background: #0ea5e9; color: #fff; }
 .fleet-vehicle[data-selected='true'] .fleet-dot { outline: 3px solid #0ea5e9; outline-offset: 2px; }
-.fleet-vehicle[data-selected='true'] .fleet-dot[data-motion='moving'] {
-  outline: none;
-  filter: drop-shadow(0 0 0 2px #0ea5e9) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
-}
 
 /* Subtle scrollbars */
 * { scrollbar-width: thin; scrollbar-color: rgb(var(--border)) transparent; }

@@ -55,7 +55,7 @@ test('tenant + user round-trip', { skip: !RUN }, async () => {
 test('device CRUD + activeImeis', { skip: !RUN }, async () => {
   const devices = new PgDeviceRepository(pool);
   const id = randomUUID();
-  const d = await devices.create({ id, tenantId, imei: '860000000000101', name: null, model: 'FTC927', status: 'provisioned', vehicleId: null, departmentId: null });
+  const d = await devices.create({ id, tenantId, imei: '860000000000101', name: null, model: 'FTC927', assetType: 'car', status: 'provisioned', vehicleId: null, departmentId: null });
   assert.equal(d.imei, '860000000000101');
   assert.equal((await devices.findByImei('860000000000101'))?.id, id);
   assert.equal((await devices.list(tenantId)).length, 1);
@@ -80,8 +80,8 @@ test('org units + department-scoped device listing', { skip: !RUN }, async () =>
   assert.equal((await orgs.list(tenantId)).length, 3);
   assert.equal((await orgs.findById(tenantId, northA.id))?.parentId, north.id);
 
-  await devices.create({ id: randomUUID(), tenantId, imei: '861100000000001', name: null, model: 'FTC927', status: 'active', vehicleId: null, departmentId: north.id });
-  await devices.create({ id: randomUUID(), tenantId, imei: '861100000000002', name: null, model: 'FTC927', status: 'active', vehicleId: null, departmentId: south.id });
+  await devices.create({ id: randomUUID(), tenantId, imei: '861100000000001', name: null, model: 'FTC927', assetType: 'car', status: 'active', vehicleId: null, departmentId: north.id });
+  await devices.create({ id: randomUUID(), tenantId, imei: '861100000000002', name: null, model: 'FTC927', assetType: 'car', status: 'active', vehicleId: null, departmentId: south.id });
   // department_id = ANY($2) filter
   const inNorthSubtree = await devices.list(tenantId, [north.id, northA.id]);
   assert.equal(inNorthSubtree.length, 1); // only the north device (filter works)
@@ -98,7 +98,7 @@ test('position insert + history round-trips lat/lon through PostGIS', { skip: !R
   const positions = new PgPositionRepository(pool);
   const deviceId = randomUUID();
   const devices = new PgDeviceRepository(pool);
-  await devices.create({ id: deviceId, tenantId, imei: '860000000000102', name: null, model: 'FTC927', status: 'active', vehicleId: null, departmentId: null });
+  await devices.create({ id: deviceId, tenantId, imei: '860000000000102', name: null, model: 'FTC927', assetType: 'car', status: 'active', vehicleId: null, departmentId: null });
 
   await positions.insertMany([
     { tenantId, deviceId, imei: '860000000000102', ts: '2026-07-24T10:00:00.000Z', latitude: 19.3133, longitude: -81.3833, altitude: 3, heading: 90, speedKph: 42, satellites: 9, ignition: true, attrs: { '800': 12300 } },

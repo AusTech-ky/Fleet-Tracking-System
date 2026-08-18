@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input } from './ui';
 import { relativeTime } from '@/lib/format';
 import { motionState, motionHint, MOTION_BG } from '@/lib/motion';
+import { AssetGlyph } from './AssetTypePicker';
+import { ASSET_LABEL } from '@/lib/asset-icons';
 import type { Device, Position, Department } from '@/lib/types';
 
 export function displayName(d: Device): string {
@@ -342,6 +344,7 @@ export function DeviceTree({
             className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
           >
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot.cls}`} title={dot.title} />
+            <span className="shrink-0 text-fg-subtle" title={ASSET_LABEL[d.assetType ?? 'car']}><AssetGlyph type={d.assetType ?? 'car'} size={12} /></span>
             <span className={`truncate ${active ? 'font-medium' : ''}`}>{displayName(d)}</span>
             {pos && pos.speedKph > 0 && (
               <span className="ml-auto shrink-0 tabular-nums text-fg-subtle">{pos.speedKph}</span>

@@ -1,5 +1,5 @@
 import { IsIn, IsOptional, IsString, Matches, MinLength } from 'class-validator';
-import type { DeviceStatus } from '../../domain/entities';
+import { ASSET_TYPES, type AssetType, type DeviceStatus } from '../../domain/entities';
 
 export class CreateDeviceDto {
   @Matches(/^\d{15}$/, { message: 'imei must be exactly 15 digits' })
@@ -12,6 +12,11 @@ export class CreateDeviceDto {
   @IsOptional()
   @IsString()
   name?: string | null;
+
+  /** asset category → map icon; defaults to 'car' */
+  @IsOptional()
+  @IsIn(ASSET_TYPES as unknown as string[])
+  assetType?: AssetType;
 
   @IsOptional()
   @IsString()
@@ -39,4 +44,9 @@ export class AssignVehicleDto {
   @IsOptional()
   @IsString()
   vehicleId!: string | null;
+}
+
+export class SetAssetTypeDto {
+  @IsIn(ASSET_TYPES as unknown as string[])
+  assetType!: AssetType;
 }

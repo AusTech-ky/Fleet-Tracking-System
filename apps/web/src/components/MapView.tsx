@@ -8,6 +8,7 @@ import { BASEMAPS, BASEMAP_LAYER_IDS, BASEMAP_VISIBLE, buildBaseStyle, type Base
 import type { Position, Geofence, DrawMode, DrawnShape, Device } from '@/lib/types';
 import { motionState, MOTION_HEX, MOTION_LABEL, type MotionState } from '@/lib/motion';
 import { donutSvg } from '@/lib/cluster-donut';
+import { assetSvg, type AssetType } from '@/lib/asset-icons';
 
 interface Props {
   positions: Record<string, Position>;
@@ -111,6 +112,7 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
           properties: {
             deviceId, state,
             name: device?.name?.trim() || pos.imei,
+            assetType: device?.assetType ?? 'car',
             heading: pos.heading, speedKph: pos.speedKph,
             // one-hot per state, so clusterProperties can sum them
             moving: state === 'moving' ? 1 : 0, stopped: state === 'stopped' ? 1 : 0,
@@ -195,11 +197,17 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
         } else {
           const state = p.state as MotionState;
           const name = String(p.name ?? '');
-          const sig = `${name}|${state}|${p.heading}|${p.deviceId === selectedId}`;
+          const asset = (p.assetType as AssetType) ?? 'car';
+          const sig = `${name}|${state}|${asset}|${p.heading}|${p.deviceId === selectedId}`;
           if (el.dataset.sig !== sig) {
+            // Disc = motion state colour; glyph inside = asset type; a small
+            // heading chevron sits above the disc only while moving.
             el.innerHTML =
               `<span class="fleet-pill">${escapeHtml(name)}</span>` +
-              `<span class="fleet-dot" data-motion="${state}" style="--motion:${MOTION_HEX[state]};--rot:${p.heading}deg"></span>`;
+              `<span class="fleet-dot" data-motion="${state}" style="--motion:${MOTION_HEX[state]};--rot:${p.heading}deg">` +
+                `<span class="fleet-heading" aria-hidden="true"></span>` +
+                assetSvg(asset, 14) +
+              `</span>`;
             el.dataset.sig = sig;
           }
           el.dataset.selected = String(p.deviceId === selectedId);

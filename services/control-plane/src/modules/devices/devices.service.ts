@@ -4,7 +4,7 @@ import { TelemetryConsumer } from '../telemetry/telemetry.consumer';
 import { randomUUID } from 'node:crypto';
 import { TOKENS, type DeviceRepository, type OrgUnitRepository } from '../../domain/repository';
 import type { AllowListPublisher } from '../../integrations/ports';
-import type { Device, DeviceStatus } from '../../domain/entities';
+import type { Device, DeviceStatus, AssetType } from '../../domain/entities';
 import type { AuthUser } from '../../common/auth';
 import { descendantIds } from '../../engine/org';
 import { BillingService } from '../billing/billing';
@@ -43,7 +43,7 @@ export class DevicesService {
     return [...descendantIds(units, user.departmentId)];
   }
 
-  async provision(user: AuthUser, imei: string, model: string, departmentId?: string | null, name?: string | null): Promise<Device> {
+  async provision(user: AuthUser, imei: string, model: string, departmentId?: string | null, name?: string | null, assetType: AssetType = 'car'): Promise<Device> {
     if (await this.devices.findByImei(imei)) {
       throw new ConflictException(`Device with IMEI ${imei} already exists`);
     }
@@ -53,7 +53,7 @@ export class DevicesService {
     await this.assertDepartmentInScope(user, dept);
 
     const device = await this.devices.create({
-      id: randomUUID(), tenantId: user.tenantId, imei, name: name ?? null, model,
+      id: randomUUID(), tenantId: user.tenantId, imei, name: name ?? null, model, assetType,
       status: 'provisioned', vehicleId: null, departmentId: dept ?? null,
     });
     await this.allowList.add(imei); // ingestion accepts it immediately
@@ -63,6 +63,13 @@ export class DevicesService {
   async rename(user: AuthUser, id: string, name: string | null): Promise<Device> {
     await this.get(user, id); // tenant + department scope check
     const updated = await this.devices.update(user.tenantId, id, { name });
+    if (!updated) throw new NotFoundException('Device not found');
+    return updated;
+  }
+
+  async setAssetType(user: AuthUser, id: string, assetType: AssetType): Promise<Device> {
+    await this.get(user, id);
+    const updated = await this.devices.update(user.tenantId, id, { assetType });
     if (!updated) throw new NotFoundException('Device not found');
     return updated;
   }

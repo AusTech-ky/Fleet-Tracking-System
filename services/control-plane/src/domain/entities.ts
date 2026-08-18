@@ -61,6 +61,13 @@ export interface OrgUnit {
   createdAt: string;
 }
 
+/**
+ * What kind of asset the tracker is on. Bounded so the map has an icon for
+ * every value; 'other' is the catch-all (rendered as a generic tools glyph).
+ */
+export const ASSET_TYPES = ['car', 'motorcycle', 'bus', 'truck', 'boat', 'trailer', 'equipment', 'other'] as const;
+export type AssetType = (typeof ASSET_TYPES)[number];
+
 export interface Device {
   id: string;
   tenantId: string;
@@ -68,6 +75,8 @@ export interface Device {
   /** friendly display name (e.g. "Delivery Van 3"); null = show model+IMEI */
   name: string | null;
   model: string; // e.g. "FTC927"
+  /** asset category → map icon */
+  assetType: AssetType;
   status: DeviceStatus;
   vehicleId: string | null;
   departmentId: string | null;

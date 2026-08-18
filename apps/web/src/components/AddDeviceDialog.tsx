@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal } from './ui';
+import { AssetTypePicker } from './AssetTypePicker';
+import type { AssetType } from '@/lib/asset-icons';
 import type { Department } from '@/lib/types';
 
 const IMEI_RE = /^\d{15}$/;
@@ -16,12 +18,13 @@ export function AddDeviceDialog({
   open: boolean;
   departments: Department[];
   onClose: () => void;
-  onCreate: (input: { imei: string; model: string; name: string | null; departmentId: string | null }) => Promise<void>;
+  onCreate: (input: { imei: string; model: string; name: string | null; departmentId: string | null; assetType: AssetType }) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [imei, setImei] = useState('');
   const [model, setModel] = useState('FTC927');
   const [departmentId, setDepartmentId] = useState('');
+  const [assetType, setAssetType] = useState<AssetType>('car');
   const [saving, setSaving] = useState(false);
 
   // Reset each time the dialog is opened.
@@ -44,6 +47,7 @@ export function AddDeviceDialog({
         model: model.trim(),
         name: name.trim() || null,
         departmentId: departmentId || null,
+        assetType,
       });
       onClose(); // only closes if onCreate resolved (errors surface as a toast)
     } finally {
@@ -54,6 +58,12 @@ export function AddDeviceDialog({
   return (
     <Modal open={open} title="Add device" onClose={onClose}>
       <form onSubmit={submit} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-fg-muted">What are you tracking?</span>
+          <AssetTypePicker value={assetType} onChange={setAssetType} />
+          <span className="text-[11px] text-fg-subtle">Sets the icon shown on the map for this device.</span>
+        </div>
+
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-fg-muted">Name <span className="font-normal text-fg-subtle">(optional)</span></span>
           <Input autoFocus placeholder="Delivery Van 1" value={name} onChange={(e) => setName(e.target.value)} />

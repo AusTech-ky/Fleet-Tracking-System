@@ -82,16 +82,16 @@ export class PgUserRepository implements UserRepository {
 
 export class PgDeviceRepository implements DeviceRepository {
   constructor(private readonly pool: Pool) {}
-  private cols = `id, tenant_id AS "tenantId", imei, name, model, status, vehicle_id AS "vehicleId", department_id AS "departmentId", created_at AS "createdAt", deleted_at AS "deletedAt"`;
+  private cols = `id, tenant_id AS "tenantId", imei, name, model, asset_type AS "assetType", status, vehicle_id AS "vehicleId", department_id AS "departmentId", created_at AS "createdAt", deleted_at AS "deletedAt"`;
   // Every normal read carries this. Deleted rows are invisible unless a
   // method explicitly opts in (findById includeDeleted, listDeleted, restore).
   private live = `deleted_at IS NULL`;
 
   async create(d: Omit<Device, 'createdAt' | 'deletedAt'>) {
     const { rows } = await this.pool.query(
-      `INSERT INTO device (id, tenant_id, imei, name, model, status, vehicle_id, department_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${this.cols}`,
-      [d.id, d.tenantId, d.imei, d.name, d.model, d.status, d.vehicleId, d.departmentId],
+      `INSERT INTO device (id, tenant_id, imei, name, model, asset_type, status, vehicle_id, department_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${this.cols}`,
+      [d.id, d.tenantId, d.imei, d.name, d.model, d.assetType, d.status, d.vehicleId, d.departmentId],
     );
     return rows[0];
   }
@@ -128,7 +128,7 @@ export class PgDeviceRepository implements DeviceRepository {
   async update(tenantId: string, id: string, patch: Partial<Device>) {
     const sets: string[] = [];
     const vals: unknown[] = [];
-    for (const [k, col] of [['status', 'status'], ['vehicleId', 'vehicle_id'], ['model', 'model'], ['departmentId', 'department_id'], ['name', 'name']] as const) {
+    for (const [k, col] of [['status', 'status'], ['vehicleId', 'vehicle_id'], ['model', 'model'], ['departmentId', 'department_id'], ['name', 'name'], ['assetType', 'asset_type']] as const) {
       if (patch[k as keyof Device] !== undefined) { vals.push(patch[k as keyof Device]); sets.push(`${col}=$${vals.length}`); }
     }
     if (!sets.length) return this.findById(tenantId, id);

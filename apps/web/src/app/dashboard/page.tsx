@@ -16,7 +16,7 @@ import { Playback } from '@/components/Playback';
 import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAction } from '@/components/Toast';
-import type { Position, DrawMode, DrawnShape, Device } from '@/lib/types';
+import type { Position, DrawMode, DrawnShape, Device, AssetType } from '@/lib/types';
 import { motionState } from '@/lib/motion';
 
 const MapView = dynamic(() => import('@/components/MapView').then((m) => m.MapView), {
@@ -151,6 +151,12 @@ export default function Dashboard() {
       await queryClient.invalidateQueries({ queryKey: ['devices'] });
     }, departmentId ? `${label} moved` : `${label} removed from group`);
   }
+  async function setAssetType(deviceId: string, assetType: AssetType) {
+    await run(async () => {
+      await api.setAssetType(deviceId, assetType);
+      await queryClient.invalidateQueries({ queryKey: ['devices'] });
+    }, 'Icon updated');
+  }
   async function renameDevice(deviceId: string, name: string) {
     await run(async () => {
       await api.renameDevice(deviceId, name);
@@ -190,7 +196,7 @@ export default function Dashboard() {
    * user's input intact — the error itself is surfaced as a toast (duplicate
    * IMEI, plan quota reached, insufficient role, …).
    */
-  async function addDevice(input: { imei: string; model: string; name: string | null; departmentId: string | null }) {
+  async function addDevice(input: { imei: string; model: string; name: string | null; departmentId: string | null; assetType: AssetType }) {
     const created = await api.createDevice(input);
     await queryClient.invalidateQueries({ queryKey: ['devices'] });
     setSelectedId(created.id);
@@ -326,6 +332,7 @@ export default function Dashboard() {
               groupName={selectedGroup}
               following={followId === selectedDevice.id}
               onRename={(name) => renameDevice(selectedDevice.id, name)}
+              onAssetType={(t) => setAssetType(selectedDevice.id, t)}
               onCenter={() => setFocus({ deviceId: selectedDevice.id, nonce: Date.now() })}
               onToggleFollow={() => setFollowId((f) => (f === selectedDevice.id ? null : selectedDevice.id))}
               onClose={() => { setSelectedId(null); setFollowId(null); }}

@@ -151,6 +151,23 @@ test('soft delete: device vanishes from views, history stays readable, IMEI is r
   assert.equal((await http('DELETE', `/devices/${dev.id}`, { token: op })).status, 403);
 });
 
+test('asset type: defaults to car, accepts the bounded set, rejects anything else, is changeable', async () => {
+  const token = await newTenant('Asset Co', 'admin@asset.ky');
+  const car = await http('POST', '/devices', { token, body: { imei: '860000000005551', model: 'FTC927' } });
+  assert.equal(car.status, 201);
+  assert.equal(car.body.assetType, 'car', 'defaults to car when omitted');
+  const boat = await http('POST', '/devices', { token, body: { imei: '860000000005552', model: 'FTC927', assetType: 'boat' } });
+  assert.equal(boat.status, 201);
+  assert.equal(boat.body.assetType, 'boat');
+  const bad = await http('POST', '/devices', { token, body: { imei: '860000000005553', model: 'FTC927', assetType: 'spaceship' } });
+  assert.equal(bad.status, 400, 'free-text asset types are refused — the map needs an icon for every value');
+  const changed = await http('PATCH', `/devices/${car.body.id}/asset-type`, { token, body: { assetType: 'trailer' } });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.assetType, 'trailer');
+  assert.equal((await http('GET', `/devices/${car.body.id}`, { token })).body.assetType, 'trailer', 'persisted');
+  assert.equal((await http('PATCH', `/devices/${car.body.id}/asset-type`, { token, body: { assetType: 'nope' } })).status, 400);
+});
+
 test('invalid IMEI is rejected by validation', async () => {
   const token = await newTenant('Fleet Two', 'admin@fleet2.ky');
   const r = await http('POST', '/devices', { token, body: { imei: '123', model: 'FTC927' } });

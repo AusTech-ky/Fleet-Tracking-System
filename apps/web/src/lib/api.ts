@@ -3,7 +3,7 @@ import { getToken, clearToken, getRefreshToken, setTokens } from './auth';
 import type {
   Device, Position, Geofence, AlertEvent, Report, ReportType, ExportFormat,
   NotificationConfig, TeamUser, Role, LoginResult, Department, BillingSummary,
-  NetworkMode, MotionMode, ReportingProfile, ReportingProfileResult,
+  NetworkMode, MotionMode, ReportingProfile, ReportingProfileResult, AssetType,
 } from './types';
 
 export interface ReportParams {
@@ -148,8 +148,10 @@ export const api = {
   renameDevice: (deviceId: string, name: string | null) =>
     request<Device>(`/devices/${deviceId}/name`, { method: 'PATCH', body: JSON.stringify({ name }) }),
 
-  createDevice: (body: { imei: string; model: string; name?: string | null; departmentId?: string | null }) =>
+  createDevice: (body: { imei: string; model: string; name?: string | null; departmentId?: string | null; assetType?: AssetType }) =>
     request<Device>('/devices', { method: 'POST', body: JSON.stringify(body) }),
+  setAssetType: (deviceId: string, assetType: AssetType) =>
+    request<Device>(`/devices/${deviceId}/asset-type`, { method: 'PATCH', body: JSON.stringify({ assetType }) }),
   /** Soft delete: hides the device, keeps every position/trip/alert; restorable. */
   deleteDevice: (deviceId: string) => request<void>(`/devices/${deviceId}`, { method: 'DELETE' }),
   listDeletedDevices: () => request<Device[]>('/devices/deleted'),

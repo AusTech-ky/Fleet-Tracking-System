@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from './ui';
 import { ReportingProfilePanel } from './ReportingProfilePanel';
+import { AssetTypePicker, AssetGlyph } from './AssetTypePicker';
+import { ASSET_LABEL, type AssetType } from '@/lib/asset-icons';
 import { relativeTime, isStale, formatCoords, compass } from '@/lib/format';
 import type { Device, Position } from '@/lib/types';
 
@@ -15,19 +17,21 @@ const statusTone: Record<string, string> = {
  */
 export function DeviceDetail({
   device, position, groupName, following,
-  onRename, onCenter, onToggleFollow, onClose,
+  onRename, onAssetType, onCenter, onToggleFollow, onClose,
 }: {
   device: Device;
   position: Position | undefined;
   groupName: string | undefined;
   following: boolean;
   onRename: (name: string) => Promise<void>;
+  onAssetType: (t: AssetType) => Promise<void>;
   onCenter: () => void;
   onToggleFollow: () => void;
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [pickingIcon, setPickingIcon] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,6 +82,9 @@ export function DeviceDetail({
               aria-label="Rename device"
               className="group flex w-full items-center gap-1.5 rounded-md text-left hover:bg-surface-2"
             >
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface-2 text-fg-muted" title={ASSET_LABEL[device.assetType ?? 'car']}>
+                <AssetGlyph type={device.assetType ?? 'car'} size={14} />
+              </span>
               <span className="truncate text-sm font-semibold text-fg">{device.name?.trim() || device.model}</span>
               {/* Always visible — a hover-only pencil is undiscoverable, and on
                   touch there is no hover at all. */}
@@ -96,7 +103,20 @@ export function DeviceDetail({
         <Badge tone={statusTone[device.status]}>{device.status}</Badge>
         {groupName && <Badge tone="brand">{groupName}</Badge>}
         {stale && <Badge tone="amber">stale</Badge>}
+        <button
+          onClick={() => setPickingIcon((p) => !p)}
+          className="ml-auto text-[11px] text-fg-subtle hover:text-fg"
+          aria-expanded={pickingIcon}
+        >
+          {pickingIcon ? 'done' : 'change icon'}
+        </button>
       </div>
+      {pickingIcon && (
+        <div className="border-b border-border px-3 py-2">
+          <AssetTypePicker size="sm" value={device.assetType ?? 'car'}
+            onChange={(t) => { void onAssetType(t); setPickingIcon(false); }} />
+        </div>
+      )}
 
       {position ? (
         <>

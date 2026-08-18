@@ -133,7 +133,7 @@ export const api = {
   listUsers: () => request<TeamUser[]>('/users'),
   createUser: (body: { email: string; password: string; role: Role; departmentId?: string | null }) =>
     request<TeamUser>('/users', { method: 'POST', body: JSON.stringify(body) }),
-  updateUser: (id: string, body: { role?: Role; active?: boolean; departmentId?: string | null }) =>
+  updateUser: (id: string, body: { role?: Role; active?: boolean; departmentId?: string | null; password?: string }) =>
     request<TeamUser>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   listDepartments: () => request<Department[]>('/departments'),

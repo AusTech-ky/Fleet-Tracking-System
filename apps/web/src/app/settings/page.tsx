@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useAction } from '@/components/Toast';
 import { Button, Card, Input, Badge } from '@/components/ui';
 import type { Role, Department } from '@/lib/types';
 
@@ -260,27 +261,36 @@ function SecuritySection() {
 function TeamSection({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
   const { data: users, error } = useQuery({ queryKey: ['users'], queryFn: api.listUsers, retry: false });
   const { data: depts } = useQuery({ queryKey: ['departments'], queryFn: api.listDepartments, retry: false });
+  const run = useAction();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>('operator');
   const [departmentId, setDepartmentId] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
+  // which user's password is being edited, and the draft value
+  const [resetFor, setResetFor] = useState<string | null>(null);
+  const [newPw, setNewPw] = useState('');
 
   // Non-admins get 403 on /users — hide the section for them.
   if (error instanceof ApiError && error.status === 403) return null;
   const deptName = (id: string | null) => depts?.find((d) => d.id === id)?.name ?? null;
 
   async function addUser() {
-    setMsg(null);
-    try {
+    const ok = await run(async () => {
       await api.createUser({ email, password, role, departmentId: departmentId || null });
-      setEmail(''); setPassword(''); setDepartmentId('');
       qc.invalidateQueries({ queryKey: ['users'] });
-    } catch (e) { setMsg(e instanceof ApiError ? e.message : 'Failed'); }
+    }, `User ${email} created`);
+    if (ok) { setEmail(''); setPassword(''); setDepartmentId(''); }
   }
   async function toggleActive(id: string, active: boolean) {
-    await api.updateUser(id, { active: !active });
-    qc.invalidateQueries({ queryKey: ['users'] });
+    await run(async () => {
+      await api.updateUser(id, { active: !active });
+      qc.invalidateQueries({ queryKey: ['users'] });
+    }, active ? 'User deactivated' : 'User reactivated');
+  }
+  async function savePassword(id: string, emailOf: string) {
+    if (newPw.length < 8) return; // button is disabled anyway
+    const ok = await run(() => api.updateUser(id, { password: newPw }), `Password updated for ${emailOf}`);
+    if (ok) { setResetFor(null); setNewPw(''); }
   }
 
   return (
@@ -299,9 +309,26 @@ function TeamSection({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
                 <td className="px-3 py-2 text-xs text-fg-muted">{deptName(u.departmentId) ?? 'tenant-wide'}</td>
                 <td className="px-3 py-2">{u.active ? <Badge tone="green">active</Badge> : <Badge tone="red">disabled</Badge>}</td>
                 <td className="px-3 py-2 text-right">
-                  <button className="text-xs text-fg-muted hover:text-fg" onClick={() => toggleActive(u.id, u.active)}>
-                    {u.active ? 'Deactivate' : 'Reactivate'}
-                  </button>
+                  {resetFor === u.id ? (
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Input
+                        autoFocus type="password" placeholder="new password (min 8)" value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void savePassword(u.id, u.email); if (e.key === 'Escape') { setResetFor(null); setNewPw(''); } }}
+                        className="w-44 py-1 text-xs"
+                      />
+                      <button className="text-xs font-medium text-brand disabled:opacity-40" disabled={newPw.length < 8}
+                        onClick={() => void savePassword(u.id, u.email)}>Save</button>
+                      <button className="text-xs text-fg-subtle hover:text-fg" onClick={() => { setResetFor(null); setNewPw(''); }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-end gap-3">
+                      <button className="text-xs text-fg-muted hover:text-fg" onClick={() => { setResetFor(u.id); setNewPw(''); }}>Set password</button>
+                      <button className="text-xs text-fg-muted hover:text-fg" onClick={() => toggleActive(u.id, u.active)}>
+                        {u.active ? 'Deactivate' : 'Reactivate'}
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -325,7 +352,6 @@ function TeamSection({ qc }: { qc: ReturnType<typeof useQueryClient> }) {
           ))}
         </select>
         <Button onClick={addUser}>Add user</Button>
-        {msg && <span className="text-xs text-danger">{msg}</span>}
       </div>
     </Card>
   );

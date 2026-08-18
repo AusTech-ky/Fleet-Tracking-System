@@ -714,6 +714,15 @@ test('user management: admin creates, lists, updates and deactivates users', asy
   const forbidden = await http('GET', '/users', { token: opLogin.body.accessToken });
   assert.equal(forbidden.status, 403);
 
+  // admin resets the operator's password → new one works, old one doesn't.
+  const reset = await http('PATCH', `/users/${created.body.id}`, { token: admin, body: { password: 'brand-new-pw-9' } });
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.passwordHash, undefined, 'reset never leaks the hash');
+  assert.equal((await http('POST', '/auth/login', { body: { email: 'op@team.ky', password: 'brand-new-pw-9' } })).status, 200, 'new password works');
+  assert.equal((await http('POST', '/auth/login', { body: { email: 'op@team.ky', password: 'password123' } })).status, 401, 'old password rejected');
+  // too-short password is refused.
+  assert.equal((await http('PATCH', `/users/${created.body.id}`, { token: admin, body: { password: 'short' } })).status, 400);
+
   // admin lists (self + operator), promotes, then deactivates
   const list = await http('GET', '/users', { token: admin });
   assert.equal(list.body.length, 2);

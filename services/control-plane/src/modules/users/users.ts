@@ -19,6 +19,8 @@ export class UpdateUserDto {
   @IsOptional() @IsIn(ROLES) role?: Role;
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() @IsString() departmentId?: string | null;
+  /** Admin sets a new password for this user (min 8). */
+  @IsOptional() @IsString() @MinLength(8) password?: string;
 }
 
 /** Strip secrets before returning a user over the API. */
@@ -60,6 +62,7 @@ export class UsersService {
       ...(dto.role !== undefined ? { role: dto.role } : {}),
       ...(dto.active !== undefined ? { active: dto.active } : {}),
       ...(dto.departmentId !== undefined ? { departmentId: dto.departmentId } : {}),
+      ...(dto.password ? { passwordHash: hashPassword(dto.password) } : {}),
     });
     return toPublic(updated!);
   }

@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -36,12 +36,48 @@ export default function Dashboard() {
   const [focus, setFocus] = useState<{ deviceId: string; nonce: number } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
   const queryClient = useQueryClient();
   const run = useAction();
 
   useEffect(() => {
     if (ready && !isAuthed) router.replace('/login');
   }, [ready, isAuthed, router]);
+
+  /**
+   * Full-screen focus mode: hide the top menu and sidebar and let the map fill
+   * the screen. Backed by the browser Fullscreen API so Esc exits natively;
+   * fullscreenchange is the single source of truth, so the browser's own exit
+   * (Esc, or leaving fullscreen any other way) and our button stay in sync.
+   */
+  useEffect(() => {
+    const onChange = () => setFocusMode(document.fullscreenElement === mainRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = useCallback(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    // Keyed on focusMode, not just document.fullscreenElement: when the browser
+    // refused real fullscreen we're in the CSS-only fallback, where there is no
+    // fullscreenElement — the exit button must still turn focus mode off.
+    if (focusMode) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+      else setFocusMode(false);
+    } else if (el.requestFullscreen) {
+      el.requestFullscreen().catch(() => setFocusMode(true)); // fall back to CSS-only
+    } else {
+      setFocusMode(true);
+    }
+  }, [focusMode]);
+  // Esc must exit even when the browser Fullscreen API wasn't used (fallback path).
+  useEffect(() => {
+    if (!focusMode || document.fullscreenElement) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFocusMode(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusMode]);
 
   const devicesQuery = useQuery({ queryKey: ['devices'], queryFn: api.listDevices, enabled: isAuthed });
   const geofencesQuery = useQuery({ queryKey: ['geofences'], queryFn: api.listGeofences, enabled: isAuthed });
@@ -231,8 +267,8 @@ export default function Dashboard() {
   if (!ready) return null;
 
   return (
-    <main className="flex h-full flex-col bg-bg">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-2.5">
+    <main ref={mainRef} className="flex h-full flex-col bg-bg">
+      <header className={`items-center justify-between gap-4 border-b border-border bg-surface px-4 py-2.5 ${focusMode ? 'hidden' : 'flex'}`}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen((o) => !o)}
@@ -290,7 +326,7 @@ export default function Dashboard() {
         <aside
           className={`absolute inset-y-0 left-0 z-30 w-72 shrink-0 border-r border-border bg-surface transition-transform md:static md:translate-x-0 ${
             sidebarOpen ? 'translate-x-0 shadow-lg' : '-translate-x-full'
-          }`}
+          } ${focusMode ? 'hidden md:hidden' : ''}`}
         >
           <DeviceTree
             devices={devicesQuery.data ?? []}
@@ -324,6 +360,8 @@ export default function Dashboard() {
             focus={focus}
             onSelect={selectDevice}
             onShapeDrawn={onShapeDrawn}
+            fullscreen={focusMode}
+            onToggleFullscreen={toggleFullscreen}
           />
           {selectedDevice && drawMode === 'none' && !pendingShape && (
             <DeviceDetail

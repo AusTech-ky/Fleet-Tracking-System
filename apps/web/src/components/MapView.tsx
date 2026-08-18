@@ -25,6 +25,9 @@ interface Props {
   focus: { deviceId: string; nonce: number } | null;
   onSelect: (deviceId: string) => void;
   onShapeDrawn: (shape: DrawnShape) => void;
+  /** true while the map is in full-screen focus mode (chrome hidden) */
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
 }
 
 /**
@@ -33,7 +36,7 @@ interface Props {
  * line. WebGL handles thousands of markers; here we update in place rather than
  * re-adding, so live pushes are cheap.
  */
-export function MapView({ positions, devices, selectedId, history, geofences, playback, drawMode, followId, focus, onSelect, onShapeDrawn }: Props) {
+export function MapView({ positions, devices, selectedId, history, geofences, playback, drawMode, followId, focus, onSelect, onShapeDrawn, fullscreen, onToggleFullscreen }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const markers = useRef<Map<string, Marker>>(new Map());
@@ -69,9 +72,15 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
       m.addLayer({ id: 'draw-vertex', type: 'circle', source: 'draw', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 4, 'circle-color': '#10b981', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
     });
     map.current = m;
+    // Keep the canvas sized to its container — sidebar toggles and full-screen
+    // change the container without firing a window resize.
+    const ro = new ResizeObserver(() => m.resize());
+    if (container.current) ro.observe(container.current);
+    (m as unknown as { __ro?: ResizeObserver }).__ro = ro;
     // Dev aid: expose the map for inspection/E2E checks (harmless in prod).
     if (typeof window !== 'undefined') (window as unknown as { __fleetMap?: MlMap }).__fleetMap = m;
     return () => {
+      ro.disconnect();
       m.remove();
       map.current = null;
     };
@@ -402,6 +411,8 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
         onBasemap={setBasemap}
         onFitAll={fitAll}
         fitDisabled={Object.keys(positions).length === 0}
+        fullscreen={fullscreen}
+        onToggleFullscreen={onToggleFullscreen}
       />
 
       {/* Fleet status summary — legend + live counts, top-left. Slides right
@@ -474,12 +485,14 @@ function FleetStatus({
  * menu that opens UPWARD from the layers icon.
  */
 function MapToolbar({
-  basemap, onBasemap, onFitAll, fitDisabled,
+  basemap, onBasemap, onFitAll, fitDisabled, fullscreen, onToggleFullscreen,
 }: {
   basemap: BasemapId;
   onBasemap: (id: BasemapId) => void;
   onFitAll: () => void;
   fitDisabled: boolean;
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
 }) {
   const [layersOpen, setLayersOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -553,6 +566,27 @@ function MapToolbar({
             <path d="M21 16v3a2 2 0 0 1-2 2h-3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" />
             <circle cx="12" cy="12" r="3" />
           </svg>
+        </button>
+        <button
+          onClick={onToggleFullscreen}
+          aria-label={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
+          aria-pressed={fullscreen}
+          title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
+          className={`${btn} border-l border-border`}
+        >
+          {fullscreen ? (
+            // exit-fullscreen: arrows pointing inward
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+              <path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+            </svg>
+          ) : (
+            // enter-fullscreen: arrows pointing outward
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M3 8V5a2 2 0 0 1 2-2h3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" />
+              <path d="M21 16v3a2 2 0 0 1-2 2h-3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+            </svg>
+          )}
         </button>
       </div>
     </div>

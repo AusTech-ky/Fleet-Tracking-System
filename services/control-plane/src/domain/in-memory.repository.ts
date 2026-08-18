@@ -195,6 +195,16 @@ export class InMemoryAlertRepository implements AlertRepository {
       .sort((a, b) => b.ts.localeCompare(a.ts)) // newest first
       .slice(0, opts.limit);
   }
+  async clear(tenantId: string, opts: { types?: string[]; deviceId?: string } = {}) {
+    const before = this.rows.length;
+    const types = opts.types && opts.types.length ? new Set(opts.types) : null;
+    this.rows = this.rows.filter((a) => !(
+      a.tenantId === tenantId &&
+      (!opts.deviceId || a.deviceId === opts.deviceId) &&
+      (!types || types.has(a.type))
+    ));
+    return before - this.rows.length;
+  }
 }
 
 export class InMemoryTripRepository implements TripRepository {

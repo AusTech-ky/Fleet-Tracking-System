@@ -212,6 +212,15 @@ export const api = {
 
   report: (p: ReportParams) => request<Report>(`/reports?${reportQuery(p)}`),
 
+  /** Clear alerts (admin). No args = all; optionally narrow by type(s) or device. */
+  clearAlerts: (opts: { type?: string; deviceId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.type) q.set('type', opts.type);
+    if (opts.deviceId) q.set('deviceId', opts.deviceId);
+    const qs = q.toString();
+    return request<{ deleted: number }>(`/alerts${qs ? `?${qs}` : ''}`, { method: 'DELETE' });
+  },
+
   /** Fetch an export (with auth header) as a Blob for client-side download. */
   downloadExport: async (p: ReportParams, format: ExportFormat): Promise<Blob> => {
     const token = getToken();

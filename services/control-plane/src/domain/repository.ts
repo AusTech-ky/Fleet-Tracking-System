@@ -99,6 +99,8 @@ export interface GeofenceRepository {
 export interface AlertRepository {
   insertMany(events: AlertEvent[]): Promise<void>;
   list(tenantId: string, opts: { deviceId?: string; limit: number }): Promise<AlertEvent[]>;
+  /** Delete alerts for a tenant, optionally narrowed by type and/or device. Returns rows removed. */
+  clear(tenantId: string, opts?: { types?: string[]; deviceId?: string }): Promise<number>;
 }
 
 export interface TripRepository {

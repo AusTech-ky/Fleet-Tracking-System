@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Inject, Injectable, Param, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Injectable, Param, Put, Query } from '@nestjs/common';
 import { IsBoolean, IsInt, IsOptional, Min, ValidateIf } from 'class-validator';
 import { CurrentUser, Roles, type AuthUser } from '../../common/auth';
 import { TOKENS, type AlertRepository, type AlertConfigRepository, type TripRepository } from '../../domain/repository';
-import type { AlertConfig } from '../../domain/entities';
+import type { AlertConfig, AlertType } from '../../domain/entities';
+import { ALERT_TYPES } from '../../domain/entities';
 
 export class UpdateAlertConfigDto {
   @ValidateIf((o) => o.overspeedKph !== null)
@@ -39,6 +40,10 @@ export class AlertsService {
     }
     return this.config.set(tenantId, merged);
   }
+  /** Clear alerts. `types` optional (validated by the controller); no types = all. */
+  clear(tenantId: string, opts: { types?: AlertType[]; deviceId?: string }) {
+    return this.alerts.clear(tenantId, opts);
+  }
   listTrips(tenantId: string, deviceId: string, from: string, to: string) {
     return this.trips.list(tenantId, deviceId, from, to, 500);
   }
@@ -55,6 +60,31 @@ export class AlertsController {
     @Query('limit') limit?: string,
   ) {
     return this.alerts.list(user.tenantId, deviceId, Number(limit ?? 100));
+  }
+
+  /**
+   * Clear alerts. Admin only — this deletes history.
+   *   DELETE /alerts                 → clear all
+   *   DELETE /alerts?type=ignition_on,ignition_off  → only those types
+   *   DELETE /alerts?deviceId=...     → only that device
+   * Returns { deleted: n }.
+   */
+  @Delete('alerts')
+  @Roles('admin')
+  @HttpCode(200)
+  async clear(
+    @CurrentUser() user: AuthUser,
+    @Query('type') type?: string,
+    @Query('deviceId') deviceId?: string,
+  ) {
+    let types: AlertType[] | undefined;
+    if (type) {
+      types = type.split(',').map((t) => t.trim()).filter(Boolean) as AlertType[];
+      const bad = types.filter((t) => !ALERT_TYPES.includes(t));
+      if (bad.length) throw new BadRequestException(`unknown alert type(s): ${bad.join(', ')}`);
+    }
+    const deleted = await this.alerts.clear(user.tenantId, { types, deviceId });
+    return { deleted };
   }
 
   @Get('alert-config')

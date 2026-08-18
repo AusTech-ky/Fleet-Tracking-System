@@ -330,6 +330,14 @@ export class PgAlertRepository implements AlertRepository {
       return { ...r, message: message ?? '', meta } as AlertEvent;
     });
   }
+  async clear(tenantId: string, opts: { types?: string[]; deviceId?: string } = {}) {
+    const params: unknown[] = [tenantId];
+    let where = 'tenant_id=$1';
+    if (opts.deviceId) { params.push(opts.deviceId); where += ` AND device_id=$${params.length}`; }
+    if (opts.types && opts.types.length) { params.push(opts.types); where += ` AND type = ANY($${params.length})`; }
+    const { rowCount } = await this.pool.query(`DELETE FROM alert_event WHERE ${where}`, params);
+    return rowCount ?? 0;
+  }
 }
 
 export class PgTripRepository implements TripRepository {

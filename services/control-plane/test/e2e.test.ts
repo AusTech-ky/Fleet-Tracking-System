@@ -502,6 +502,43 @@ test('geofence entry + overspeed produce alerts (stored + queryable)', async () 
   assert.ok(types.includes('overspeed'), `expected overspeed in ${JSON.stringify(types)}`);
 });
 
+test('clear alerts: by type keeps the rest, then clear-all, validated, admin-only', async () => {
+  const token = await newTenant('Clear Co', 'admin@clear.ky');
+  const dev = await http('POST', '/devices', { token, body: { imei: '860000000005005', model: 'FTC927' } });
+  const fence = await http('POST', '/geofences', { token, body: { name: 'Depot', kind: 'circle', centerLat: 19.30, centerLon: -81.38, radiusM: 300 } });
+  assert.equal(fence.status, 201);
+  const bus = app.get<InMemoryBus>(TOKENS.TelemetryBus);
+  // Inside the fence and over 90 → geofence_enter + overspeed. Then ignition on/off via a stop.
+  await bus.push([
+    telemetry('860000000005005', '2026-07-24T12:00:00.000Z', 19.30, -81.38, 120, 1),
+    telemetry('860000000005005', '2026-07-24T12:05:00.000Z', 19.30, -81.38, 0, 0), // ignition off
+  ]);
+  const before = (await http('GET', `/alerts?deviceId=${dev.body.id}&limit=100`, { token })).body;
+  const typesBefore = new Set(before.map((a: any) => a.type));
+  assert.ok(typesBefore.has('overspeed') && typesBefore.has('geofence_enter'), JSON.stringify([...typesBefore]));
+
+  // Unknown type → 400, nothing deleted.
+  assert.equal((await http('DELETE', '/alerts?type=nope', { token })).status, 400);
+
+  // Clear ONLY overspeed → it's gone, the others remain.
+  const cleared = await http('DELETE', '/alerts?type=overspeed', { token });
+  assert.equal(cleared.status, 200);
+  assert.ok(cleared.body.deleted >= 1);
+  const afterType = (await http('GET', `/alerts?deviceId=${dev.body.id}&limit=100`, { token })).body;
+  assert.ok(!afterType.some((a: any) => a.type === 'overspeed'), 'overspeed cleared');
+  assert.ok(afterType.some((a: any) => a.type === 'geofence_enter'), 'geofence kept');
+
+  // Operators/viewers cannot clear.
+  await http('POST', '/users', { token, body: { email: 'op@clear.ky', password: 'password123', role: 'operator' } });
+  const op = (await http('POST', '/auth/login', { body: { email: 'op@clear.ky', password: 'password123' } })).body.accessToken;
+  assert.equal((await http('DELETE', '/alerts', { token: op })).status, 403);
+
+  // Clear all → empty.
+  const all = await http('DELETE', '/alerts', { token });
+  assert.equal(all.status, 200);
+  assert.equal((await http('GET', `/alerts?deviceId=${dev.body.id}&limit=100`, { token })).body.length, 0);
+});
+
 test('alert config can be read and updated', async () => {
   const token = await newTenant('Cfg Co', 'admin@cfg.ky');
   const def = await http('GET', '/alert-config', { token });

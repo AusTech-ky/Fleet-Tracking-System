@@ -117,13 +117,10 @@ export type Geofence =
       createdAt: string;
     };
 
-export type AlertType =
-  | 'overspeed'
-  | 'ignition_on'
-  | 'ignition_off'
-  | 'geofence_enter'
-  | 'geofence_exit'
-  | 'device_offline';
+export const ALERT_TYPES = [
+  'overspeed', 'ignition_on', 'ignition_off', 'geofence_enter', 'geofence_exit', 'device_offline',
+] as const;
+export type AlertType = (typeof ALERT_TYPES)[number];
 
 export interface AlertEvent {
   id: string;

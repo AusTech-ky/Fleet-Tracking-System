@@ -214,6 +214,14 @@ export default function Dashboard() {
       await queryClient.invalidateQueries({ queryKey: ['devices'] });
     }, 'Icon updated');
   }
+  async function clearAlerts() {
+    if (!window.confirm(`Clear all ${alerts.length} alert${alerts.length === 1 ? '' : 's'}? This permanently deletes them.`)) return;
+    await run(async () => {
+      const { deleted } = await api.clearAlerts();
+      seedAlerts([]); // empty the live panel immediately
+      return deleted;
+    }, 'Alerts cleared');
+  }
   async function renameDevice(deviceId: string, name: string) {
     await run(async () => {
       await api.renameDevice(deviceId, name);
@@ -403,7 +411,7 @@ export default function Dashboard() {
             />
           )}
           {selectedId && drawMode === 'none' && !pendingShape && <Playback history={history} onScrub={setPlaybackPos} />}
-          <AlertsPanel alerts={alerts} open={rightPanel === 'alerts'} imeiFor={imeiFor} />
+          <AlertsPanel alerts={alerts} open={rightPanel === 'alerts'} imeiFor={imeiFor} onClear={clearAlerts} />
           <GeofencePanel
             open={rightPanel === 'geofences'}
             geofences={geofencesQuery.data ?? []}

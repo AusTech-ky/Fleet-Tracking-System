@@ -45,9 +45,15 @@ export function buildBaseStyle(active: BasemapId): StyleSpecification {
     version: 8,
     sources: {
       'src-osm': { type: 'raster', tiles: ['a', 'b', 'c'].map((s) => `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`), tileSize: 256, maxzoom: 19, attribution: OSM_ATTR },
-      'src-sat': { type: 'raster', tiles: [esri('World_Imagery')], tileSize: 256, maxzoom: 19, attribution: ESRI_ATTR },
+      // Esri World Imagery only has real tiles to z18 over the Cayman Islands
+      // (z19+ returns an identical "map data not available" placeholder). Capping
+      // the source maxzoom at 18 makes MapLibre OVERZOOM — upscale the z18 tile —
+      // for deeper zoom, so imagery stays continuous (slightly soft) instead of
+      // going blank. The map itself can still zoom past 18. Verified 2026-08-18.
+      'src-sat': { type: 'raster', tiles: [esri('World_Imagery')], tileSize: 256, maxzoom: 18, attribution: ESRI_ATTR },
       'src-topo': { type: 'raster', tiles: [esri('World_Topo_Map')], tileSize: 256, maxzoom: 19, attribution: ESRI_ATTR },
-      'src-ref': { type: 'raster', tiles: [esri('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 19, attribution: ESRI_ATTR },
+      // Same reason: the hybrid label overlay's deep tiles are blank here too.
+      'src-ref': { type: 'raster', tiles: [esri('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 18, attribution: ESRI_ATTR },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': '#0b1220' } },

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input } from './ui';
 import { relativeTime } from '@/lib/format';
-import { motionState, motionHint, MOTION_BG } from '@/lib/motion';
+import { motionState, motionHint, MOTION_BG, type MotionState } from '@/lib/motion';
 import { AssetGlyph } from './AssetTypePicker';
 import { ASSET_LABEL } from '@/lib/asset-icons';
 import type { Device, Position, Department } from '@/lib/types';
@@ -118,7 +118,7 @@ function RowMenu({ items }: { items: Array<{ label: string; onClick: () => void;
 export function DeviceTree({
   devices, positions, departments, selectedId, loading = false,
   onSelect, onCreateGroup, onRenameGroup, onMoveGroup, onDeleteGroup, onMoveDevices, onRenameDevice, onDeleteDevice,
-  onRestoreDevice, deletedDevices = [], onAddDevice,
+  onRestoreDevice, deletedDevices = [], statusFilter, onAddDevice,
 }: {
   devices: Device[];
   positions: Record<string, Position>;
@@ -137,6 +137,8 @@ export function DeviceTree({
   onRestoreDevice: (device: Device) => Promise<void>;
   /** Soft-deleted devices, shown in a collapsed section so restore is discoverable. */
   deletedDevices?: Device[];
+  /** active motion-state filter from the map tiles; empty = show all */
+  statusFilter: Set<MotionState>;
   onAddDevice: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -157,7 +159,9 @@ export function DeviceTree({
 
   // ---- build the tree ------------------------------------------------------
   const { roots, allDevices } = useMemo(() => {
-    const visible = q ? devices.filter(matches) : devices;
+    const now = Date.now();
+    const passesStatus = (d: Device) => statusFilter.size === 0 || statusFilter.has(motionState(d, positions[d.id], now));
+    const visible = devices.filter((d) => passesStatus(d) && (!q || matches(d)));
     const known = new Set(departments.map((g) => g.id));
 
     const byParent = new Map<string, Department[]>();
@@ -189,7 +193,7 @@ export function DeviceTree({
     }
     return { roots: tree, allDevices: visible };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [devices, departments, q]);
+  }, [devices, departments, positions, q, statusFilter]);
 
   // While searching, everything is open — a collapsed branch would hide hits.
   const isOpen = (id: string) => (q ? true : expanded.has(id));

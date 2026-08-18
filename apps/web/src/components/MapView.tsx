@@ -28,6 +28,10 @@ interface Props {
   /** true while the map is in full-screen focus mode (chrome hidden) */
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  /** active motion-state filter; empty = show all. Drives the tiles + markers. */
+  statusFilter: Set<MotionState>;
+  onToggleStatus: (s: MotionState) => void;
+  onClearStatus: () => void;
 }
 
 /**
@@ -36,7 +40,7 @@ interface Props {
  * line. WebGL handles thousands of markers; here we update in place rather than
  * re-adding, so live pushes are cheap.
  */
-export function MapView({ positions, devices, selectedId, history, geofences, playback, drawMode, followId, focus, onSelect, onShapeDrawn, fullscreen, onToggleFullscreen }: Props) {
+export function MapView({ positions, devices, selectedId, history, geofences, playback, drawMode, followId, focus, onSelect, onShapeDrawn, fullscreen, onToggleFullscreen, statusFilter, onToggleStatus, onClearStatus }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MlMap | null>(null);
   const markers = useRef<Map<string, Marker>>(new Map());
@@ -112,11 +116,12 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
     const now = Date.now();
     return {
       type: 'FeatureCollection',
-      features: Object.entries(positions).map(([deviceId, pos]) => {
+      features: Object.entries(positions).flatMap(([deviceId, pos]) => {
         const device = deviceById.get(deviceId);
         const state = motionState(device ?? ({ status: 'active' } as Device), pos, now);
-        return {
-          type: 'Feature',
+        if (statusFilter.size > 0 && !statusFilter.has(state)) return [];
+        return [{
+          type: 'Feature' as const,
           id: deviceId,
           properties: {
             deviceId, state,
@@ -127,12 +132,12 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
             moving: state === 'moving' ? 1 : 0, stopped: state === 'stopped' ? 1 : 0,
             parked: state === 'parked' ? 1 : 0, inactive: state === 'inactive' ? 1 : 0,
           },
-          geometry: { type: 'Point', coordinates: [pos.longitude, pos.latitude] },
-        };
+          geometry: { type: 'Point' as const, coordinates: [pos.longitude, pos.latitude] },
+        }];
       }),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions, deviceById, clock]);
+  }, [positions, deviceById, clock, statusFilter]);
 
   // Push features into the clustered source (created on first use).
   useEffect(() => {
@@ -417,7 +422,8 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
 
       {/* Fleet status summary — legend + live counts, top-left. Slides right
           when the device card occupies that corner. */}
-      <FleetStatus devices={devices} positions={positions} clock={clock} offsetForCard={!!selectedId} />
+      <FleetStatus devices={devices} positions={positions} clock={clock} offsetForCard={!!selectedId}
+        statusFilter={statusFilter} onToggleStatus={onToggleStatus} onClearStatus={onClearStatus} />
     </div>
   );
 }
@@ -431,13 +437,16 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
  * re-derive even when no new position arrives.
  */
 function FleetStatus({
-  devices, positions, clock, offsetForCard,
+  devices, positions, clock, offsetForCard, statusFilter, onToggleStatus, onClearStatus,
 }: {
   devices: Device[];
   positions: Record<string, Position>;
   clock: number;
   /** the device detail card is open in the top-left; shift right of it */
   offsetForCard: boolean;
+  statusFilter: Set<MotionState>;
+  onToggleStatus: (s: MotionState) => void;
+  onClearStatus: () => void;
 }) {
   const counts = useMemo(() => {
     const now = Date.now();
@@ -447,34 +456,51 @@ function FleetStatus({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devices, positions, clock]);
   const total = devices.length;
+  const filtering = statusFilter.size > 0;
 
   return (
     <div
-      role="status"
-      aria-label="Fleet status"
-      // Inline `left`, not a Tailwind arbitrary class: a value that only appears
-      // inside a template literal isn't seen by the JIT scanner and gets no CSS,
-      // which left the summary sitting under the device card.
-      // 0.5rem gap + 18rem card (w-72) + 0.5rem gap = 19rem.
-      // No `transition-[left]`: with that class present, an inline `left` change
-      // never took effect in Chrome (verified by removing the class live — the
-      // element moved instantly). A snap is fine; a stuck summary is not.
+      // NB: pointer-events must stay enabled now that the tiles are buttons.
       style={{ left: offsetForCard ? '19rem' : '0.5rem' }}
-      className="pointer-events-none absolute top-2 z-10 flex items-stretch overflow-hidden rounded-xl border border-border bg-surface/95 shadow-lg backdrop-blur"
+      className="absolute top-2 z-10 flex items-stretch"
     >
-      {(['moving', 'stopped', 'parked', 'inactive'] as const).map((s, i) => (
-        <div
-          key={s}
-          className={`flex min-w-[5.25rem] flex-col items-center px-3 py-2 ${i > 0 ? 'border-l border-border' : ''}`}
-          title={`${counts[s]} of ${total} ${MOTION_LABEL[s].toLowerCase()}`}
+      <div
+        role="group"
+        aria-label="Filter by status"
+        className="flex items-stretch overflow-hidden rounded-xl border border-border bg-surface/95 shadow-lg backdrop-blur"
+      >
+        {(['moving', 'stopped', 'parked', 'inactive'] as const).map((s, i) => {
+          const on = statusFilter.has(s);
+          // When filtering, dim the tiles that aren't part of the filter.
+          const dim = filtering && !on;
+          return (
+            <button
+              key={s}
+              onClick={() => onToggleStatus(s)}
+              aria-pressed={on}
+              title={`${on ? 'Remove' : 'Filter to'} ${MOTION_LABEL[s].toLowerCase()} — ${counts[s]} of ${total}`}
+              className={`flex min-w-[5.25rem] flex-col items-center px-3 py-2 transition-colors ${i > 0 ? 'border-l border-border' : ''} ${
+                on ? 'bg-brand/15' : 'hover:bg-surface-2'
+              } ${dim ? 'opacity-45' : ''}`}
+            >
+              <span className="text-2xl font-semibold leading-none tabular-nums text-fg">{counts[s]}</span>
+              <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
+                <span className="inline-block h-2.5 w-2.5 rounded-full ring-1 ring-white/70" style={{ background: MOTION_HEX[s] }} />
+                {MOTION_LABEL[s]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {filtering && (
+        <button
+          onClick={onClearStatus}
+          title="Clear status filter"
+          className="ml-1.5 flex items-center gap-1 self-center rounded-lg border border-border bg-surface/95 px-2.5 py-2 text-xs font-medium text-fg-muted shadow-lg backdrop-blur hover:bg-surface-2 hover:text-fg"
         >
-          <span className="text-2xl font-semibold leading-none tabular-nums text-fg">{counts[s]}</span>
-          <span className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-fg-muted">
-            <span className="inline-block h-2.5 w-2.5 rounded-full ring-1 ring-white/70" style={{ background: MOTION_HEX[s] }} />
-            {MOTION_LABEL[s]}
-          </span>
-        </div>
-      ))}
+          <span aria-hidden>✕</span> Clear
+        </button>
+      )}
     </div>
   );
 }

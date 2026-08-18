@@ -17,7 +17,7 @@ import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAction } from '@/components/Toast';
 import type { Position, DrawMode, DrawnShape, Device, AssetType } from '@/lib/types';
-import { motionState } from '@/lib/motion';
+import { motionState, type MotionState } from '@/lib/motion';
 
 const MapView = dynamic(() => import('@/components/MapView').then((m) => m.MapView), {
   ssr: false,
@@ -37,6 +37,15 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
   const [addDeviceOpen, setAddDeviceOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<Set<MotionState>>(new Set());
+  const toggleStatus = useCallback((sState: MotionState) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      next.has(sState) ? next.delete(sState) : next.add(sState);
+      return next;
+    });
+  }, []);
+  const clearStatus = useCallback(() => setStatusFilter(new Set()), []);
   const mainRef = useRef<HTMLElement>(null);
   const queryClient = useQueryClient();
   const run = useAction();
@@ -344,6 +353,7 @@ export default function Dashboard() {
             onDeleteDevice={deleteDevice}
             onRestoreDevice={restoreDevice}
             deletedDevices={deletedQuery.data ?? []}
+            statusFilter={statusFilter}
             onAddDevice={() => { setAddDeviceOpen(true); setSidebarOpen(false); }}
           />
         </aside>
@@ -362,6 +372,9 @@ export default function Dashboard() {
             onShapeDrawn={onShapeDrawn}
             fullscreen={focusMode}
             onToggleFullscreen={toggleFullscreen}
+            statusFilter={statusFilter}
+            onToggleStatus={toggleStatus}
+            onClearStatus={clearStatus}
           />
           {selectedDevice && drawMode === 'none' && !pendingShape && (
             <DeviceDetail

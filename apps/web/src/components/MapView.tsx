@@ -7,6 +7,7 @@ import { circleToPolygon, haversineMeters } from '@/lib/geo';
 import { BASEMAPS, BASEMAP_LAYER_IDS, BASEMAP_VISIBLE, buildBaseStyle, type BasemapId } from '@/lib/basemaps';
 import type { Position, Geofence, DrawMode, DrawnShape, Device } from '@/lib/types';
 import { motionState, MOTION_HEX, MOTION_LABEL, type MotionState } from '@/lib/motion';
+import { donutSvg } from '@/lib/cluster-donut';
 
 interface Props {
   positions: Record<string, Position>;
@@ -85,35 +86,139 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
   }, []);
   const deviceById = useMemo(() => new Map(devices.map((d) => [d.id, d])), [devices]);
 
-  // Diff-update markers.
+  /**
+   * Vehicle rendering — cluster-aware.
+   *
+   * All vehicles go into a clustered GeoJSON source. MapLibre does the spatial
+   * work (which points merge at this zoom); we render DOM markers for whatever
+   * the source currently yields: a status DONUT for a cluster (arcs = how many
+   * vehicles are in each state, count in the middle), or a dot + NAME PILL for
+   * a lone vehicle. `clusterProperties` sums per-state counts server-side in
+   * the source, so each donut knows its own segments without us re-scanning.
+   * Markers are keyed by cluster id / device id and diffed, so live updates
+   * don't rebuild the DOM.
+   */
+  const vehicleFeatures = useMemo<GeoJSON.FeatureCollection>(() => {
+    const now = Date.now();
+    return {
+      type: 'FeatureCollection',
+      features: Object.entries(positions).map(([deviceId, pos]) => {
+        const device = deviceById.get(deviceId);
+        const state = motionState(device ?? ({ status: 'active' } as Device), pos, now);
+        return {
+          type: 'Feature',
+          id: deviceId,
+          properties: {
+            deviceId, state,
+            name: device?.name?.trim() || pos.imei,
+            heading: pos.heading, speedKph: pos.speedKph,
+            // one-hot per state, so clusterProperties can sum them
+            moving: state === 'moving' ? 1 : 0, stopped: state === 'stopped' ? 1 : 0,
+            parked: state === 'parked' ? 1 : 0, inactive: state === 'inactive' ? 1 : 0,
+          },
+          geometry: { type: 'Point', coordinates: [pos.longitude, pos.latitude] },
+        };
+      }),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions, deviceById, clock]);
+
+  // Push features into the clustered source (created on first use).
   useEffect(() => {
     const m = map.current;
     if (!m) return;
-    const now = Date.now();
-    for (const [deviceId, pos] of Object.entries(positions)) {
-      let marker = markers.current.get(deviceId);
-      if (!marker) {
-        const el = document.createElement('button');
-        el.className = 'fleet-marker';
-        el.addEventListener('click', () => onSelect(deviceId));
-        marker = new maplibregl.Marker({ element: el }).setLngLat([pos.longitude, pos.latitude]);
-        marker.addTo(m);
-        markers.current.set(deviceId, marker);
-      } else {
-        marker.setLngLat([pos.longitude, pos.latitude]);
+    const apply = () => {
+      const src = m.getSource('vehicles') as maplibregl.GeoJSONSource | undefined;
+      if (src) { src.setData(vehicleFeatures); return; }
+      m.addSource('vehicles', {
+        type: 'geojson', data: vehicleFeatures,
+        cluster: true, clusterRadius: 48, clusterMaxZoom: 17,
+        clusterProperties: {
+          moving: ['+', ['get', 'moving']], stopped: ['+', ['get', 'stopped']],
+          parked: ['+', ['get', 'parked']], inactive: ['+', ['get', 'inactive']],
+        },
+      });
+      // An invisible layer is required for the source to be "used" and querySourceFeatures to work.
+      m.addLayer({ id: 'vehicles-anchor', type: 'circle', source: 'vehicles', paint: { 'circle-radius': 0, 'circle-opacity': 0 } });
+    };
+    // Don't gate on isStyleLoaded(): with raster basemaps it can stay false
+    // long after 'load' has fired, and once('load') then never fires again —
+    // the source would silently never be created. `ready` is set in the map's
+    // own load handler; before that, wait for it. addSource itself is safe as
+    // soon as the style object exists.
+    if (ready.current) apply(); else m.once('load', apply);
+  }, [vehicleFeatures]);
+
+  // Render DOM markers from what the source yields at the current zoom.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    const render = () => {
+      if (!m.getSource('vehicles')) return;
+      const feats = m.querySourceFeatures('vehicles');
+      const seen = new Set<string>();
+      // querySourceFeatures returns duplicates across tiles — dedupe by key.
+      for (const f of feats) {
+        const p = f.properties ?? {};
+        const isCluster = !!p.cluster;
+        const key = isCluster ? `c:${p.cluster_id}` : `d:${p.deviceId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
+        let marker = markers.current.get(key);
+        if (!marker) {
+          const el = document.createElement('div');
+          el.className = isCluster ? 'fleet-cluster' : 'fleet-vehicle';
+          if (isCluster) {
+            const clusterId = p.cluster_id as number;
+            // Click a donut → zoom to the level where it breaks apart.
+            el.addEventListener('click', () => {
+              const src = m.getSource('vehicles') as maplibregl.GeoJSONSource;
+              src.getClusterExpansionZoom(clusterId).then((z) => m.easeTo({ center: [lng, lat], zoom: z, duration: 500 })).catch(() => {});
+            });
+          } else {
+            const id = p.deviceId as string;
+            el.addEventListener('click', () => onSelect(id));
+          }
+          marker = new maplibregl.Marker({ element: el, anchor: isCluster ? 'center' : 'bottom' }).setLngLat([lng, lat]).addTo(m);
+          markers.current.set(key, marker);
+        } else {
+          marker.setLngLat([lng, lat]);
+        }
+        const el = marker.getElement();
+        if (isCluster) {
+          const counts = { moving: p.moving ?? 0, stopped: p.stopped ?? 0, parked: p.parked ?? 0, inactive: p.inactive ?? 0 };
+          const { svg, total } = donutSvg(counts);
+          const sig = `${total}|${counts.moving}|${counts.stopped}|${counts.parked}|${counts.inactive}`;
+          if (el.dataset.sig !== sig) { el.innerHTML = svg; el.dataset.sig = sig; }
+          el.title = `${total} vehicles — ${counts.moving} moving, ${counts.stopped} stopped, ${counts.parked} parked, ${counts.inactive} inactive`;
+        } else {
+          const state = p.state as MotionState;
+          const name = String(p.name ?? '');
+          const sig = `${name}|${state}|${p.heading}|${p.deviceId === selectedId}`;
+          if (el.dataset.sig !== sig) {
+            el.innerHTML =
+              `<span class="fleet-pill">${escapeHtml(name)}</span>` +
+              `<span class="fleet-dot" data-motion="${state}" style="--motion:${MOTION_HEX[state]};--rot:${p.heading}deg"></span>`;
+            el.dataset.sig = sig;
+          }
+          el.dataset.selected = String(p.deviceId === selectedId);
+          el.title = `${name} — ${MOTION_LABEL[state]}${state === 'moving' ? ` · ${p.speedKph} km/h` : ''}`;
+        }
       }
-      const el = marker.getElement();
-      const device = deviceById.get(deviceId);
-      // A position with no matching device row can't be classified for
-      // suspended/retired; treat it as an ordinary active device.
-      const state = motionState(device ?? { status: 'active' } as Device, pos, now);
-      el.style.setProperty('--rot', `${pos.heading}deg`);
-      el.style.setProperty('--motion', MOTION_HEX[state]);
-      el.dataset.motion = state;
-      el.dataset.selected = String(deviceId === selectedId);
-      el.title = `${device?.name?.trim() || pos.imei} — ${MOTION_LABEL[state]}${state === 'moving' ? ` · ${pos.speedKph} km/h` : ''}`;
-    }
-  }, [positions, selectedId, onSelect, deviceById, clock]);
+      // Remove markers for clusters/devices no longer yielded (merged, split, or gone).
+      for (const [key, marker] of markers.current) {
+        if (!seen.has(key)) { marker.remove(); markers.current.delete(key); }
+      }
+    };
+    render();
+    // Clusters change with the camera, and the source only reports features
+    // once its tiles are loaded — re-render on both.
+    m.on('moveend', render);
+    m.on('zoomend', render);
+    m.on('sourcedata', render);
+    return () => { m.off('moveend', render); m.off('zoomend', render); m.off('sourcedata', render); };
+  }, [vehicleFeatures, selectedId, onSelect]);
 
   // Draw the selected device's history line.
   useEffect(() => {
@@ -444,6 +549,10 @@ function MapToolbar({
       </div>
     </div>
   );
+}
+
+function escapeHtml(t: string): string {
+  return t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
 function emptyLine(): GeoJSON.Feature {

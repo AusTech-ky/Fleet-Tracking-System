@@ -59,23 +59,53 @@ body {
 * { transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
 
 /*
- * Live vehicle marker. Colour = motion state, set by MapView via --motion from
- * lib/motion.ts (green moving / yellow stopped / red parked / black inactive).
- * A moving vehicle shows as a heading-rotated arrow; anything not moving is a
- * plain dot — a parked car's last heading is noise, not information.
+ * Vehicle markers — cluster-aware.
+ *
+ * .fleet-cluster  a status donut (SVG from lib/cluster-donut.ts): ring arcs are
+ *                 proportional to vehicles per state, count in the middle.
+ * .fleet-vehicle  a lone vehicle: name PILL above a state-coloured DOT. Anchored
+ *                 at the bottom so the dot sits on the coordinate. A moving
+ *                 vehicle's dot is a heading arrow; anything else is a plain
+ *                 dot — a parked car's last heading is noise, not information.
+ * Colour = motion state, via --motion from lib/motion.ts.
  */
-.fleet-marker {
+.fleet-cluster {
+  cursor: pointer;
+  line-height: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+  transition: transform 0.15s ease;
+}
+.fleet-cluster:hover { transform: scale(1.06); }
+
+.fleet-vehicle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.fleet-pill {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  font: 600 12px/1.2 system-ui, sans-serif;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.fleet-dot {
+  display: block;
   width: 16px;
   height: 16px;
   border: 2px solid #fff;
   border-radius: 50%;
-  padding: 0;
-  cursor: pointer;
   background: var(--motion, #64748b);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
-  transition: transform 0.4s ease, background-color 0.3s ease;
 }
-.fleet-marker[data-motion='moving'] {
+.fleet-dot[data-motion='moving'] {
   width: 20px;
   height: 20px;
   border: none;
@@ -85,12 +115,10 @@ body {
   transform: rotate(var(--rot, 0deg));
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
-/* Selection: a ring, not a colour swap — the state colour must stay readable. */
-.fleet-marker[data-selected='true'] {
-  outline: 3px solid #0ea5e9;
-  outline-offset: 2px;
-}
-.fleet-marker[data-selected='true'][data-motion='moving'] {
+/* Selection: highlight the pill, and ring the dot — never swap the state colour. */
+.fleet-vehicle[data-selected='true'] .fleet-pill { background: #0ea5e9; color: #fff; }
+.fleet-vehicle[data-selected='true'] .fleet-dot { outline: 3px solid #0ea5e9; outline-offset: 2px; }
+.fleet-vehicle[data-selected='true'] .fleet-dot[data-motion='moving'] {
   outline: none;
   filter: drop-shadow(0 0 0 2px #0ea5e9) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }

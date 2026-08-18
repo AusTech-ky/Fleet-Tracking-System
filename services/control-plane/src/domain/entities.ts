@@ -193,3 +193,32 @@ export interface Position {
   ignition: boolean | null;
   attrs: Record<string, number>;
 }
+
+export interface ImmobilizerConfig {
+  deviceId: string;
+  tenantId: string;
+  enabled: boolean;
+  dout: number;          // 1..4
+  activeHigh: boolean;
+  maxEngageKph: number;
+  immobilized: boolean;
+  lastCommand: string | null;
+  lastReply: string | null;
+  lastBy: string | null;
+  lastAt: string | null;
+  testedAt: string | null;
+  createdAt: string;
+}
+export type ImmobilizerAction = 'immobilize' | 'mobilize' | 'test' | 'enable' | 'disable';
+export interface ImmobilizerEvent {
+  id: string;
+  tenantId: string;
+  deviceId: string;
+  action: ImmobilizerAction;
+  actorId: string | null;
+  actorEmail: string | null;
+  command: string | null;
+  reply: string | null;
+  ok: boolean;
+  ts: string;
+}

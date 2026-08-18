@@ -4,6 +4,7 @@ import type {
   Device, Position, Geofence, AlertEvent, Report, ReportType, ExportFormat,
   NotificationConfig, TeamUser, Role, LoginResult, Department, BillingSummary,
   NetworkMode, MotionMode, ReportingProfile, ReportingProfileResult, AssetType,
+  ImmobilizerConfig, ImmobilizerEvent,
 } from './types';
 
 export interface ReportParams {
@@ -152,6 +153,15 @@ export const api = {
     request<Device>('/devices', { method: 'POST', body: JSON.stringify(body) }),
   setAssetType: (deviceId: string, assetType: AssetType) =>
     request<Device>(`/devices/${deviceId}/asset-type`, { method: 'PATCH', body: JSON.stringify({ assetType }) }),
+  // --- immobilizer (starter/fuel cut) ---
+  immobilizer: (deviceId: string) => request<ImmobilizerConfig>(`/devices/${deviceId}/immobilizer`),
+  immobilizerHistory: (deviceId: string) => request<ImmobilizerEvent[]>(`/devices/${deviceId}/immobilizer/history`),
+  configureImmobilizer: (deviceId: string, body: { enabled: boolean; dout?: number; activeHigh?: boolean; maxEngageKph?: number }) =>
+    request<ImmobilizerConfig>(`/devices/${deviceId}/immobilizer`, { method: 'PUT', body: JSON.stringify(body) }),
+  testImmobilizer: (deviceId: string) => request<ImmobilizerConfig>(`/devices/${deviceId}/immobilizer/test`, { method: 'POST' }),
+  immobilize: (deviceId: string) => request<ImmobilizerConfig>(`/devices/${deviceId}/immobilizer/immobilize`, { method: 'POST' }),
+  mobilize: (deviceId: string) => request<ImmobilizerConfig>(`/devices/${deviceId}/immobilizer/mobilize`, { method: 'POST' }),
+
   /** Soft delete: hides the device, keeps every position/trip/alert; restorable. */
   deleteDevice: (deviceId: string) => request<void>(`/devices/${deviceId}`, { method: 'DELETE' }),
   listDeletedDevices: () => request<Device[]>('/devices/deleted'),

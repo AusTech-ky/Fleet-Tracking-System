@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
+import type { ImmobilizerConfig, ImmobilizerEvent, Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
 import { DEFAULT_ALERT_CONFIG, emptyNotificationConfig } from './entities';
 import type {
   TenantRepository,
@@ -15,6 +15,7 @@ import type {
   NotificationConfigRepository,
   SubscriptionRepository,
   RefreshTokenRepository,
+  ImmobilizerRepository,
 } from './repository';
 
 const now = () => new Date().toISOString();
@@ -306,5 +307,34 @@ export class InMemoryRefreshTokenRepository implements RefreshTokenRepository {
     for (const [id, t] of this.byId) {
       if (t.familyId === familyId && !t.revokedAt) this.byId.set(id, { ...t, revokedAt });
     }
+  }
+}
+
+export class InMemoryImmobilizerRepository implements ImmobilizerRepository {
+  private byDevice = new Map<string, ImmobilizerConfig>();
+  private log: ImmobilizerEvent[] = [];
+  async get(tenantId: string, deviceId: string) {
+    const c = this.byDevice.get(deviceId);
+    return c && c.tenantId === tenantId ? c : null;
+  }
+  async upsert(cfg: ImmobilizerConfig) {
+    this.byDevice.set(cfg.deviceId, { ...cfg });
+    return { ...cfg };
+  }
+  async patch(tenantId: string, deviceId: string, patch: Partial<ImmobilizerConfig>) {
+    const c = await this.get(tenantId, deviceId);
+    if (!c) return null;
+    const next = { ...c, ...patch, deviceId: c.deviceId, tenantId: c.tenantId };
+    this.byDevice.set(deviceId, next);
+    return next;
+  }
+  async addEvent(e: ImmobilizerEvent) {
+    this.log.push({ ...e });
+  }
+  async events(tenantId: string, deviceId: string, limit: number) {
+    return this.log
+      .filter((e) => e.tenantId === tenantId && e.deviceId === deviceId)
+      .sort((a, b) => b.ts.localeCompare(a.ts))
+      .slice(0, limit);
   }
 }

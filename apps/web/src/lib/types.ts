@@ -138,3 +138,28 @@ export type RtMessage =
   | { type: 'position'; position: Position }
   | { type: 'alert'; alert: AlertEvent }
   | { type: 'error'; message: string };
+
+export interface ImmobilizerConfig {
+  deviceId: string;
+  tenantId: string;
+  enabled: boolean;
+  dout: number;
+  activeHigh: boolean;
+  maxEngageKph: number;
+  immobilized: boolean;
+  lastCommand: string | null;
+  lastReply: string | null;
+  lastBy: string | null;
+  lastAt: string | null;
+  testedAt: string | null;
+  createdAt: string;
+}
+export interface ImmobilizerEvent {
+  id: string;
+  action: 'immobilize' | 'mobilize' | 'test' | 'enable' | 'disable';
+  actorEmail: string | null;
+  command: string | null;
+  reply: string | null;
+  ok: boolean;
+  ts: string;
+}

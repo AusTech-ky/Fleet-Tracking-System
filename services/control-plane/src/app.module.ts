@@ -22,7 +22,7 @@ import {
 import {
   PgTenantRepository, PgUserRepository, PgDeviceRepository, PgVehicleRepository, PgPositionRepository,
   PgGeofenceRepository, PgAlertRepository, PgTripRepository, PgAlertConfigRepository,
-  PgNotificationConfigRepository, PgOrgUnitRepository, PgSubscriptionRepository, PgRefreshTokenRepository,
+  PgNotificationConfigRepository, PgOrgUnitRepository, PgSubscriptionRepository, PgRefreshTokenRepository, PgImmobilizerRepository,
 } from './domain/pg.repository';
 import { FakePaymentProvider, StripePaymentProvider } from './billing/payment';
 import { BillingController, BillingService } from './modules/billing/billing';
@@ -32,6 +32,7 @@ import { UsersController, UsersService } from './modules/users/users';
 import { DepartmentsController, DepartmentsService } from './modules/departments/departments';
 import { AllExceptionsFilter } from './common/http';
 import { InMemoryAllowList, InMemoryBus, InMemoryHotState } from './integrations/in-memory';
+import { InMemoryImmobilizerRepository } from './domain/in-memory.repository';
 import { RedisAllowList, RedisHotState, RedisStreamBus } from './integrations/redis';
 
 import { AuthController } from './modules/auth/auth.controller';
@@ -39,6 +40,7 @@ import { AuthService } from './modules/auth/auth.service';
 import { DevicesController } from './modules/devices/devices.controller';
 import { DevicesService } from './modules/devices/devices.service';
 import { DeviceConfigController, DeviceConfigService } from './modules/devices/device-config';
+import { ImmobilizerController, ImmobilizerService } from './modules/devices/immobilizer';
 import { HttpDeviceCommander, InMemoryDeviceCommander } from './integrations/device-commander';
 import { VehiclesController, VehiclesService } from './modules/vehicles/vehicles';
 import { TelemetryConsumer } from './modules/telemetry/telemetry.consumer';
@@ -72,6 +74,7 @@ function buildInfraProviders(config: Config): Provider[] {
       { provide: TOKENS.TelemetryBus, useValue: new InMemoryBus() },
       { provide: TOKENS.HotState, useValue: new InMemoryHotState() },
       { provide: TOKENS.DeviceCommander, useValue: new InMemoryDeviceCommander() },
+      { provide: TOKENS.ImmobilizerRepository, useValue: new InMemoryImmobilizerRepository() },
     ];
   }
   const pool = new Pool({ connectionString: config.databaseUrl! });
@@ -103,6 +106,7 @@ function buildInfraProviders(config: Config): Provider[] {
         ? new HttpDeviceCommander(config.ingestCommandUrl, config.ingestCommandSecret)
         : null,
     },
+    { provide: TOKENS.ImmobilizerRepository, useValue: new PgImmobilizerRepository(pool) },
   ];
 }
 
@@ -128,12 +132,12 @@ export class AppModule {
       controllers: [
         AuthController, DevicesController, VehiclesController, PositionsController, HealthController,
         GeofencesController, AlertsController, ReportsController, NotificationsController, UsersController,
-        DepartmentsController, BillingController, DeviceConfigController,
+        DepartmentsController, BillingController, DeviceConfigController, ImmobilizerController,
       ],
       providers: [
         AuthService, DevicesService, VehiclesService, TelemetryConsumer, AllowListBootstrap, DeviceConfigService,
         GeofencesService, AlertsService, ReportsService, NotificationsService, UsersService, DepartmentsService,
-        BillingService, FleetResolver,
+        BillingService, FleetResolver, ImmobilizerService,
         RealtimeGateway,
         { provide: TOKENS.RealtimePublisher, useExisting: RealtimeGateway },
         ...buildInfraProviders(config),

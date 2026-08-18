@@ -1,5 +1,5 @@
 import { types, type Pool } from 'pg';
-import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
+import type { ImmobilizerConfig, ImmobilizerEvent, Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
 import { DEFAULT_ALERT_CONFIG, emptyNotificationConfig } from './entities';
 
 // The domain types declare all timestamps as ISO-8601 strings, but node-pg
@@ -10,7 +10,7 @@ types.setTypeParser(1184, (v: string | null) => (v === null ? null : new Date(v)
 import type {
   TenantRepository, UserRepository, DeviceRepository, OrgUnitRepository, VehicleRepository, PositionRepository,
   GeofenceRepository, AlertRepository, TripRepository, AlertConfigRepository, NotificationConfigRepository,
-  SubscriptionRepository, RefreshTokenRepository,
+  SubscriptionRepository, RefreshTokenRepository, ImmobilizerRepository,
 } from './repository';
 
 /**
@@ -474,5 +474,52 @@ export class PgRefreshTokenRepository implements RefreshTokenRepository {
     await this.pool.query(
       `UPDATE refresh_token SET revoked_at=$2 WHERE family_id=$1 AND revoked_at IS NULL`,
       [familyId, revokedAt]);
+  }
+}
+
+export class PgImmobilizerRepository implements ImmobilizerRepository {
+  constructor(private readonly pool: Pool) {}
+  private cols = `device_id AS "deviceId", tenant_id AS "tenantId", enabled, dout, active_high AS "activeHigh",
+    max_engage_kph AS "maxEngageKph", immobilized, last_command AS "lastCommand", last_reply AS "lastReply",
+    last_by AS "lastBy", last_at AS "lastAt", tested_at AS "testedAt", created_at AS "createdAt"`;
+  async get(tenantId: string, deviceId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT ${this.cols} FROM device_immobilizer WHERE tenant_id=$1 AND device_id=$2`, [tenantId, deviceId]);
+    return rows[0] ?? null;
+  }
+  async upsert(c: ImmobilizerConfig) {
+    const { rows } = await this.pool.query(
+      `INSERT INTO device_immobilizer (device_id, tenant_id, enabled, dout, active_high, max_engage_kph, immobilized, last_command, last_reply, last_by, last_at, tested_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (device_id) DO UPDATE SET enabled=$3, dout=$4, active_high=$5, max_engage_kph=$6, immobilized=$7,
+         last_command=$8, last_reply=$9, last_by=$10, last_at=$11, tested_at=$12
+       RETURNING ${this.cols}`,
+      [c.deviceId, c.tenantId, c.enabled, c.dout, c.activeHigh, c.maxEngageKph, c.immobilized, c.lastCommand, c.lastReply, c.lastBy, c.lastAt, c.testedAt]);
+    return rows[0];
+  }
+  async patch(tenantId: string, deviceId: string, patch: Partial<ImmobilizerConfig>) {
+    const map: Array<[keyof ImmobilizerConfig, string]> = [
+      ['enabled','enabled'],['dout','dout'],['activeHigh','active_high'],['maxEngageKph','max_engage_kph'],
+      ['immobilized','immobilized'],['lastCommand','last_command'],['lastReply','last_reply'],
+      ['lastBy','last_by'],['lastAt','last_at'],['testedAt','tested_at']];
+    const sets: string[] = []; const vals: unknown[] = [tenantId, deviceId];
+    for (const [k, col] of map) if (patch[k] !== undefined) { vals.push(patch[k]); sets.push(`${col}=$${vals.length}`); }
+    if (!sets.length) return this.get(tenantId, deviceId);
+    const { rows } = await this.pool.query(
+      `UPDATE device_immobilizer SET ${sets.join(',')} WHERE tenant_id=$1 AND device_id=$2 RETURNING ${this.cols}`, vals);
+    return rows[0] ?? null;
+  }
+  async addEvent(e: ImmobilizerEvent) {
+    await this.pool.query(
+      `INSERT INTO immobilizer_event (id, tenant_id, device_id, action, actor_id, actor_email, command, reply, ok, ts)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [e.id, e.tenantId, e.deviceId, e.action, e.actorId, e.actorEmail, e.command, e.reply, e.ok, e.ts]);
+  }
+  async events(tenantId: string, deviceId: string, limit: number) {
+    const { rows } = await this.pool.query(
+      `SELECT id, tenant_id AS "tenantId", device_id AS "deviceId", action, actor_id AS "actorId",
+        actor_email AS "actorEmail", command, reply, ok, ts
+       FROM immobilizer_event WHERE tenant_id=$1 AND device_id=$2 ORDER BY ts DESC LIMIT $3`, [tenantId, deviceId, limit]);
+    return rows;
   }
 }

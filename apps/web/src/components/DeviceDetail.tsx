@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from './ui';
 import { ReportingProfilePanel } from './ReportingProfilePanel';
+import { ImmobilizerPanel } from './ImmobilizerPanel';
 import { AssetTypePicker, AssetGlyph } from './AssetTypePicker';
 import { ASSET_LABEL, type AssetType } from '@/lib/asset-icons';
 import { relativeTime, isStale, formatCoords, compass } from '@/lib/format';
@@ -31,6 +32,7 @@ export function DeviceDetail({
 }) {
   const [editing, setEditing] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
+  const [immobOpen, setImmobOpen] = useState(false);
   const [pickingIcon, setPickingIcon] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -147,6 +149,14 @@ export function DeviceDetail({
           ⚙
         </button>
         <button
+          onClick={() => setImmobOpen(true)}
+          title="Immobilizer — remotely cut or restore the engine"
+          aria-label="Immobilizer"
+          className="rounded-lg border border-border px-2 py-1.5 text-xs text-fg hover:border-danger/50 hover:bg-danger/10 hover:text-danger"
+        >
+          ⛔
+        </button>
+        <button
           onClick={onCenter}
           disabled={!position}
           className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-40"
@@ -166,6 +176,7 @@ export function DeviceDetail({
       </div>
 
       <ReportingProfilePanel device={device} open={configOpen} onClose={() => setConfigOpen(false)} />
+      <ImmobilizerPanel device={device} position={position} open={immobOpen} onClose={() => setImmobOpen(false)} />
     </div>
   );
 }

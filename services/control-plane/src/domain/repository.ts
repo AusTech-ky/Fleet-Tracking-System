@@ -1,4 +1,5 @@
-import type { Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
+import type {
+  ImmobilizerConfig, ImmobilizerEvent, Tenant, User, Device, Vehicle, Position, Geofence, AlertEvent, AlertConfig, Trip, NotificationConfig, OrgUnit, Subscription, RefreshToken } from './entities';
 
 /**
  * Persistence seam. The API/consumer depend on these interfaces, never on a
@@ -117,6 +118,15 @@ export interface NotificationConfigRepository {
 }
 
 /** DI tokens (interfaces don't exist at runtime, so DI uses string tokens). */
+export interface ImmobilizerRepository {
+  get(tenantId: string, deviceId: string): Promise<ImmobilizerConfig | null>;
+  /** Create-or-update the config row. */
+  upsert(cfg: ImmobilizerConfig): Promise<ImmobilizerConfig>;
+  patch(tenantId: string, deviceId: string, patch: Partial<ImmobilizerConfig>): Promise<ImmobilizerConfig | null>;
+  addEvent(e: ImmobilizerEvent): Promise<void>;
+  events(tenantId: string, deviceId: string, limit: number): Promise<ImmobilizerEvent[]>;
+}
+
 export const TOKENS = {
   TenantRepository: 'TenantRepository',
   UserRepository: 'UserRepository',
@@ -138,4 +148,5 @@ export const TOKENS = {
   TelemetryBus: 'TelemetryBus',
   RealtimePublisher: 'RealtimePublisher',
   DeviceCommander: 'DeviceCommander',
+  ImmobilizerRepository: 'ImmobilizerRepository',
 } as const;

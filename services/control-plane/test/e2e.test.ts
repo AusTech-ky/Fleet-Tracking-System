@@ -168,6 +168,85 @@ test('asset type: defaults to car, accepts the bounded set, rejects anything els
   assert.equal((await http('PATCH', `/devices/${car.body.id}/asset-type`, { token, body: { assetType: 'nope' } })).status, 400);
 });
 
+test('immobilizer: disabled by default, enable + wire, speed-gated, immobilize/mobilize, audited, admin-only', async () => {
+  const admin = await newTenant('Immob Co', 'admin@immob.ky');
+  const IMEI = '860000000004444';
+  const dev = (await http('POST', '/devices', { token: admin, body: { imei: IMEI, model: 'FTC927', name: 'Repo Car' } })).body;
+  const cmd = app.get(TOKENS.DeviceCommander) as InMemoryDeviceCommander;
+  const bus = app.get<InMemoryBus>(TOKENS.TelemetryBus);
+  cmd.connect(IMEI);
+
+  // Off by default.
+  const cfg0 = await http('GET', `/devices/${dev.id}/immobilizer`, { token: admin });
+  assert.equal(cfg0.status, 200);
+  assert.equal(cfg0.body.enabled, false);
+  assert.equal(cfg0.body.immobilized, false);
+
+  // Can't immobilize while disabled.
+  assert.equal((await http('POST', `/devices/${dev.id}/immobilizer/immobilize`, { token: admin })).status, 400);
+
+  // Enable with wiring (DOUT 2, active-high, cut only under 5 km/h).
+  const en = await http('PUT', `/devices/${dev.id}/immobilizer`, { token: admin, body: { enabled: true, dout: 2, activeHigh: true, maxEngageKph: 5 } });
+  assert.equal(en.status, 200);
+  assert.equal(en.body.enabled, true);
+  assert.equal(en.body.dout, 2);
+  assert.equal(en.body.testedAt, null, 'not yet tested');
+
+  // Vehicle MOVING → immobilize is refused server-side (409), and no command was sent.
+  const mk = (ts: string, speed: number) => ({ imei: IMEI, ts, data: JSON.stringify({ imei: IMEI, ts, latitude: 19.3, longitude: -81.38, altitude: 0, heading: 0, speedKph: speed, satellites: 8, fields: { ignition: 1 }, attrs: {} }) });
+  await bus.push([mk(new Date().toISOString(), 40)]);
+  await new Promise((r) => setTimeout(r, 50));
+  const sentBefore = cmd.sent.length;
+  const moving = await http('POST', `/devices/${dev.id}/immobilizer/immobilize`, { token: admin });
+  assert.equal(moving.status, 409);
+  assert.match(moving.body.message, /moving/i);
+  assert.equal(cmd.sent.length, sentBefore, 'no relay command sent for a moving vehicle');
+
+  // Now stopped → immobilize succeeds and sends the right setdigout for DOUT 2 active-high.
+  await bus.push([mk(new Date().toISOString(), 0)]);
+  await new Promise((r) => setTimeout(r, 50));
+  const imm = await http('POST', `/devices/${dev.id}/immobilizer/immobilize`, { token: admin });
+  assert.equal(imm.status, 201);
+  assert.equal(imm.body.immobilized, true);
+  const lastCmd = cmd.sent.at(-1)!.command;
+  assert.match(lastCmd, /^setdigout \?1\?\?/, 'DOUT 2 driven HIGH, others left as ?');
+  assert.match(lastCmd, / 5 /, 'device-side 5 km/h speed threshold present');
+
+  // Mobilize releases it (never speed-gated) even while moving.
+  await bus.push([mk(new Date().toISOString(), 60)]);
+  await new Promise((r) => setTimeout(r, 50));
+  const mob = await http('POST', `/devices/${dev.id}/immobilizer/mobilize`, { token: admin });
+  assert.equal(mob.status, 201);
+  assert.equal(mob.body.immobilized, false);
+  assert.match(cmd.sent.at(-1)!.command, /^setdigout \?0\?\?/, 'DOUT 2 driven LOW to release');
+
+  // Offline device → 409, and the failure is logged. Must be STOPPED first, or
+  // the speed guard would 409 before any relay attempt (and log nothing).
+  await bus.push([mk(new Date().toISOString(), 0)]);
+  await new Promise((r) => setTimeout(r, 50));
+  cmd.disconnect(IMEI);
+  assert.equal((await http('POST', `/devices/${dev.id}/immobilizer/immobilize`, { token: admin })).status, 409);
+  cmd.connect(IMEI);
+
+  // Audit log records every action.
+  const hist = (await http('GET', `/devices/${dev.id}/immobilizer/history`, { token: admin })).body;
+  const actions = hist.map((e: any) => e.action);
+  assert.ok(actions.includes('immobilize') && actions.includes('mobilize') && actions.includes('enable'), 'actions logged');
+  assert.ok(hist.some((e: any) => e.ok === false), 'the offline failure is logged too');
+  assert.ok(hist.every((e: any) => e.actorEmail === 'admin@immob.ky'), 'actor recorded');
+
+  // Operators may view, but not act.
+  await http('POST', '/users', { token: admin, body: { email: 'op@immob.ky', password: 'password123', role: 'operator' } });
+  const op = (await http('POST', '/auth/login', { body: { email: 'op@immob.ky', password: 'password123' } })).body.accessToken;
+  assert.equal((await http('GET', `/devices/${dev.id}/immobilizer`, { token: op })).status, 200);
+  assert.equal((await http('POST', `/devices/${dev.id}/immobilizer/immobilize`, { token: op })).status, 403);
+  assert.equal((await http('PUT', `/devices/${dev.id}/immobilizer`, { token: op, body: { enabled: false } })).status, 403);
+
+  // Another tenant can't see or touch it.
+  const other = await newTenant('Other Immob', 'x@other.ky');
+  assert.equal((await http('GET', `/devices/${dev.id}/immobilizer`, { token: other })).status, 404);
+});
+
 test('invalid IMEI is rejected by validation', async () => {
   const token = await newTenant('Fleet Two', 'admin@fleet2.ky');
   const r = await http('POST', '/devices', { token, body: { imei: '123', model: 'FTC927' } });

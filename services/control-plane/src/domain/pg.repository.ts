@@ -82,8 +82,12 @@ export class PgUserRepository implements UserRepository {
 
 export class PgDeviceRepository implements DeviceRepository {
   constructor(private readonly pool: Pool) {}
-  private cols = `id, tenant_id AS "tenantId", imei, name, model, status, vehicle_id AS "vehicleId", department_id AS "departmentId", created_at AS "createdAt"`;
-  async create(d: Omit<Device, 'createdAt'>) {
+  private cols = `id, tenant_id AS "tenantId", imei, name, model, status, vehicle_id AS "vehicleId", department_id AS "departmentId", created_at AS "createdAt", deleted_at AS "deletedAt"`;
+  // Every normal read carries this. Deleted rows are invisible unless a
+  // method explicitly opts in (findById includeDeleted, listDeleted, restore).
+  private live = `deleted_at IS NULL`;
+
+  async create(d: Omit<Device, 'createdAt' | 'deletedAt'>) {
     const { rows } = await this.pool.query(
       `INSERT INTO device (id, tenant_id, imei, name, model, status, vehicle_id, department_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${this.cols}`,
@@ -91,28 +95,34 @@ export class PgDeviceRepository implements DeviceRepository {
     );
     return rows[0];
   }
-  async findById(tenantId: string, id: string) {
+  async findById(tenantId: string, id: string, opts: { includeDeleted?: boolean } = {}) {
     const { rows } = await this.pool.query(
-      `SELECT ${this.cols} FROM device WHERE tenant_id=$1 AND id=$2`, [tenantId, id]);
+      `SELECT ${this.cols} FROM device WHERE tenant_id=$1 AND id=$2 ${opts.includeDeleted ? '' : `AND ${this.live}`}`,
+      [tenantId, id]);
     return rows[0] ?? null;
   }
   async findByImei(imei: string) {
-    const { rows } = await this.pool.query(`SELECT ${this.cols} FROM device WHERE imei=$1`, [imei]);
+    const { rows } = await this.pool.query(`SELECT ${this.cols} FROM device WHERE imei=$1 AND ${this.live}`, [imei]);
     return rows[0] ?? null;
   }
   async list(tenantId: string, departmentIds?: string[]) {
     if (departmentIds) {
       const { rows } = await this.pool.query(
-        `SELECT ${this.cols} FROM device WHERE tenant_id=$1 AND department_id = ANY($2) ORDER BY created_at DESC`,
+        `SELECT ${this.cols} FROM device WHERE tenant_id=$1 AND department_id = ANY($2) AND ${this.live} ORDER BY created_at DESC`,
         [tenantId, departmentIds]);
       return rows;
     }
     const { rows } = await this.pool.query(
-      `SELECT ${this.cols} FROM device WHERE tenant_id=$1 ORDER BY created_at DESC`, [tenantId]);
+      `SELECT ${this.cols} FROM device WHERE tenant_id=$1 AND ${this.live} ORDER BY created_at DESC`, [tenantId]);
+    return rows;
+  }
+  async listDeleted(tenantId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT ${this.cols} FROM device WHERE tenant_id=$1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`, [tenantId]);
     return rows;
   }
   async count(tenantId: string) {
-    const { rows } = await this.pool.query(`SELECT count(*)::int AS n FROM device WHERE tenant_id=$1`, [tenantId]);
+    const { rows } = await this.pool.query(`SELECT count(*)::int AS n FROM device WHERE tenant_id=$1 AND ${this.live}`, [tenantId]);
     return rows[0].n as number;
   }
   async update(tenantId: string, id: string, patch: Partial<Device>) {
@@ -124,17 +134,31 @@ export class PgDeviceRepository implements DeviceRepository {
     if (!sets.length) return this.findById(tenantId, id);
     vals.push(tenantId, id);
     const { rows } = await this.pool.query(
-      `UPDATE device SET ${sets.join(',')} WHERE tenant_id=$${vals.length - 1} AND id=$${vals.length} RETURNING ${this.cols}`,
+      `UPDATE device SET ${sets.join(',')} WHERE tenant_id=$${vals.length - 1} AND id=$${vals.length} AND ${this.live} RETURNING ${this.cols}`,
       vals,
     );
     return rows[0] ?? null;
   }
-  async remove(tenantId: string, id: string) {
-    const { rowCount } = await this.pool.query(`DELETE FROM device WHERE tenant_id=$1 AND id=$2`, [tenantId, id]);
+  async softDelete(tenantId: string, id: string, at: string) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE device SET deleted_at=$3 WHERE tenant_id=$1 AND id=$2 AND ${this.live}`, [tenantId, id, at]);
     return (rowCount ?? 0) > 0;
   }
+  async restore(tenantId: string, id: string) {
+    // The partial unique index (imei WHERE deleted_at IS NULL) makes this UPDATE
+    // fail with 23505 if the IMEI has since been re-provisioned as a live row —
+    // surface that as "cannot restore" rather than a 500.
+    try {
+      const { rowCount } = await this.pool.query(
+        `UPDATE device SET deleted_at=NULL WHERE tenant_id=$1 AND id=$2 AND deleted_at IS NOT NULL`, [tenantId, id]);
+      return (rowCount ?? 0) > 0;
+    } catch (err) {
+      if ((err as { code?: string }).code === '23505') return false;
+      throw err;
+    }
+  }
   async activeImeis() {
-    const { rows } = await this.pool.query(`SELECT imei FROM device WHERE status IN ('active','provisioned')`);
+    const { rows } = await this.pool.query(`SELECT imei FROM device WHERE status IN ('active','provisioned') AND ${this.live}`);
     return rows.map((r) => r.imei as string);
   }
 }

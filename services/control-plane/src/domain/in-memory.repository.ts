@@ -62,24 +62,32 @@ export class InMemoryUserRepository implements UserRepository {
 
 export class InMemoryDeviceRepository implements DeviceRepository {
   private byId = new Map<string, Device>();
-  async create(d: Omit<Device, 'createdAt'>) {
-    const rec: Device = { ...d, createdAt: now() };
+  private isLive = (d: Device) => d.deletedAt === null;
+
+  async create(d: Omit<Device, 'createdAt' | 'deletedAt'>) {
+    const rec: Device = { ...d, createdAt: now(), deletedAt: null };
     this.byId.set(rec.id, rec);
     return rec;
   }
-  async findById(tenantId: string, id: string) {
+  async findById(tenantId: string, id: string, opts: { includeDeleted?: boolean } = {}) {
     const d = this.byId.get(id);
-    return d && d.tenantId === tenantId ? d : null;
+    if (!d || d.tenantId !== tenantId) return null;
+    return opts.includeDeleted || this.isLive(d) ? d : null;
   }
   async findByImei(imei: string) {
-    for (const d of this.byId.values()) if (d.imei === imei) return d;
+    for (const d of this.byId.values()) if (d.imei === imei && this.isLive(d)) return d;
     return null;
   }
   async list(tenantId: string, departmentIds?: string[]) {
     const set = departmentIds ? new Set(departmentIds) : null;
     return [...this.byId.values()].filter(
-      (d) => d.tenantId === tenantId && (!set || (d.departmentId !== null && set.has(d.departmentId))),
+      (d) => d.tenantId === tenantId && this.isLive(d) && (!set || (d.departmentId !== null && set.has(d.departmentId))),
     );
+  }
+  async listDeleted(tenantId: string) {
+    return [...this.byId.values()]
+      .filter((d) => d.tenantId === tenantId && !this.isLive(d))
+      .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''));
   }
   async count(tenantId: string) {
     return (await this.list(tenantId)).length;
@@ -91,14 +99,23 @@ export class InMemoryDeviceRepository implements DeviceRepository {
     this.byId.set(id, updated);
     return updated;
   }
-  async remove(tenantId: string, id: string) {
+  async softDelete(tenantId: string, id: string, at: string) {
     const d = await this.findById(tenantId, id);
     if (!d) return false;
-    return this.byId.delete(id);
+    this.byId.set(id, { ...d, deletedAt: at });
+    return true;
+  }
+  async restore(tenantId: string, id: string) {
+    const d = await this.findById(tenantId, id, { includeDeleted: true });
+    if (!d || this.isLive(d)) return false;
+    // Mirror the Postgres partial unique index: a live row may already hold this IMEI.
+    if (await this.findByImei(d.imei)) return false;
+    this.byId.set(id, { ...d, deletedAt: null });
+    return true;
   }
   async activeImeis() {
     return [...this.byId.values()]
-      .filter((d) => d.status === 'active' || d.status === 'provisioned')
+      .filter((d) => this.isLive(d) && (d.status === 'active' || d.status === 'provisioned'))
       .map((d) => d.imei);
   }
 }

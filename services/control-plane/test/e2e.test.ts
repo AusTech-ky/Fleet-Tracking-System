@@ -92,6 +92,65 @@ test('provisioning a device adds it to the ingestion allow-list', async () => {
   assert.equal(allow.imeis.has('356307042441013'), false, 'suspended device removed from allow-list');
 });
 
+test('soft delete: device vanishes from views, history stays readable, IMEI is reusable, restore works', async () => {
+  const token = await newTenant('SoftDel Co', 'admin@softdel.ky');
+  const IMEI = '860000000006666';
+  const dev = (await http('POST', '/devices', { token, body: { imei: IMEI, model: 'FTC927', name: 'Old Van' } })).body;
+  const allow = app.get<InMemoryAllowList>(TOKENS.AllowListPublisher);
+
+  // Give it some history.
+  const bus = app.get<InMemoryBus>(TOKENS.TelemetryBus);
+  const mk = (ts: string) => ({ imei: IMEI, ts, data: JSON.stringify({ imei: IMEI, ts, latitude: 19.3, longitude: -81.38, altitude: 0, heading: 0, speedKph: 30, satellites: 8, fields: { ignition: 1 }, attrs: {} }) });
+  await bus.push([mk('2026-07-24T10:00:00.000Z'), mk('2026-07-24T10:01:00.000Z')]);
+  assert.equal((await http('GET', `/devices/${dev.id}/history?from=2026-07-24T00:00:00Z&to=2026-07-25T00:00:00Z`, { token })).body.length, 2);
+
+  // Delete (soft).
+  assert.equal((await http('DELETE', `/devices/${dev.id}`, { token })).status, 204);
+
+  // Gone from every normal view…
+  assert.equal((await http('GET', '/devices', { token })).body.length, 0, 'not in list');
+  assert.equal((await http('GET', `/devices/${dev.id}`, { token })).status, 404, 'not by id');
+  assert.equal(allow.imeis.has(IMEI), false, 'ingestion no longer accepts it');
+  // …but visible in the deleted view, with the timestamp.
+  const deleted = (await http('GET', '/devices/deleted', { token })).body;
+  assert.equal(deleted.length, 1);
+  assert.equal(deleted[0].id, dev.id);
+  assert.ok(deleted[0].deletedAt, 'deletedAt is set');
+
+  // HISTORY IS PRESERVED and still readable — the whole point.
+  const hist = await http('GET', `/devices/${dev.id}/history?from=2026-07-24T00:00:00Z&to=2026-07-25T00:00:00Z`, { token });
+  assert.equal(hist.status, 200);
+  assert.equal(hist.body.length, 2, 'positions survive the delete and remain queryable');
+  assert.equal((await http('GET', `/devices/${dev.id}/latest`, { token })).status, 200);
+
+  // New telemetry for the deleted IMEI is NOT attached to the deleted row.
+  await bus.push([mk('2026-07-24T10:02:00.000Z')]);
+  assert.equal((await http('GET', `/devices/${dev.id}/history?from=2026-07-24T00:00:00Z&to=2026-07-25T00:00:00Z`, { token })).body.length, 2, 'no new rows after delete');
+
+  // The same physical tracker can be provisioned again as a fresh device.
+  const again = await http('POST', '/devices', { token, body: { imei: IMEI, model: 'FTC927', name: 'New Van' } });
+  assert.equal(again.status, 201, 'IMEI is reusable after soft delete');
+  assert.notEqual(again.body.id, dev.id, 'it is a new row; the old one keeps its history');
+
+  // Restore of the OLD row must now fail: two live devices can't share an IMEI.
+  assert.equal((await http('POST', `/devices/${dev.id}/restore`, { token })).status, 409);
+
+  // Delete the new one, restore the old one → old is live again with its history.
+  await http('DELETE', `/devices/${again.body.id}`, { token });
+  const restored = await http('POST', `/devices/${dev.id}/restore`, { token });
+  assert.equal(restored.status, 201);
+  assert.equal(restored.body.name, 'Old Van');
+  assert.equal(restored.body.deletedAt, null);
+  assert.equal((await http('GET', '/devices', { token })).body.length, 1);
+  assert.equal(allow.imeis.has(IMEI), true, 'ingestion accepts it again');
+  assert.equal((await http('GET', `/devices/${dev.id}/history?from=2026-07-24T00:00:00Z&to=2026-07-25T00:00:00Z`, { token })).body.length, 2, 'history intact through delete + restore');
+
+  // Only admins may delete/restore.
+  await http('POST', '/users', { token, body: { email: 'op@softdel.ky', password: 'password123', role: 'operator' } });
+  const op = (await http('POST', '/auth/login', { body: { email: 'op@softdel.ky', password: 'password123' } })).body.accessToken;
+  assert.equal((await http('DELETE', `/devices/${dev.id}`, { token: op })).status, 403);
+});
+
 test('invalid IMEI is rejected by validation', async () => {
   const token = await newTenant('Fleet Two', 'admin@fleet2.ky');
   const r = await http('POST', '/devices', { token, body: { imei: '123', model: 'FTC927' } });

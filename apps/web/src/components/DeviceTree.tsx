@@ -115,7 +115,8 @@ function RowMenu({ items }: { items: Array<{ label: string; onClick: () => void;
 
 export function DeviceTree({
   devices, positions, departments, selectedId, loading = false,
-  onSelect, onCreateGroup, onRenameGroup, onMoveGroup, onDeleteGroup, onMoveDevices, onRenameDevice, onAddDevice,
+  onSelect, onCreateGroup, onRenameGroup, onMoveGroup, onDeleteGroup, onMoveDevices, onRenameDevice, onDeleteDevice,
+  onRestoreDevice, deletedDevices = [], onAddDevice,
 }: {
   devices: Device[];
   positions: Record<string, Position>;
@@ -129,6 +130,11 @@ export function DeviceTree({
   onDeleteGroup: (id: string) => Promise<void>;
   onMoveDevices: (deviceIds: string[], departmentId: string | null) => Promise<void>;
   onRenameDevice: (deviceId: string, name: string) => Promise<void>;
+  /** Soft delete — the device is hidden, its history kept; it appears under "Recently deleted". */
+  onDeleteDevice: (device: Device) => Promise<void>;
+  onRestoreDevice: (device: Device) => Promise<void>;
+  /** Soft-deleted devices, shown in a collapsed section so restore is discoverable. */
+  deletedDevices?: Device[];
   onAddDevice: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -345,6 +351,7 @@ export function DeviceTree({
         <RowMenu
           items={[
             { label: 'Rename', onClick: () => { setDraftName(d.name ?? ''); setRenaming(d.id); } },
+            { label: 'Delete', danger: true, onClick: () => void onDeleteDevice(d) },
             { label: 'Show on map', onClick: () => onSelect(d.id) },
             { label: 'Move to…', onClick: () => setMany([d.id], true) },
             ...(d.departmentId ? [{ label: 'Remove from group', onClick: () => void onMoveDevices([d.id], null) }] : []),
@@ -503,6 +510,40 @@ export function DeviceTree({
           <p className="px-3 pt-2 text-sm text-fg-muted">No devices match “{query}”.</p>
         )}
       </div>
+
+      {/* recently deleted — collapsed by default; restore lives here */}
+      {deletedDevices.length > 0 && (
+        <div className="border-t border-border">
+          <button
+            onClick={() => toggleOpen('__deleted__')}
+            className="flex w-full items-center gap-1 px-2 py-1.5 text-xs text-fg-subtle hover:bg-surface-2"
+          >
+            <span className={`w-3 transition-transform ${isOpen('__deleted__') ? 'rotate-90' : ''}`}>▸</span>
+            <span>🗑</span>
+            <span className="font-medium">Recently deleted</span>
+            <span className="ml-auto rounded-full bg-surface-2 px-1.5 text-[11px] tabular-nums text-fg-muted">{deletedDevices.length}</span>
+          </button>
+          {isOpen('__deleted__') && (
+            <div className="pb-1">
+              {deletedDevices.map((d) => (
+                <div key={d.id} className="flex items-center gap-1.5 py-1 pl-7 pr-1 text-xs text-fg-subtle">
+                  <span className="min-w-0 flex-1 truncate line-through" title={`${d.model} · ${d.imei}`}>{displayName(d)}</span>
+                  <span className="shrink-0 text-[10px]" title={d.deletedAt ? new Date(d.deletedAt).toLocaleString() : ''}>
+                    {d.deletedAt ? relativeTime(d.deletedAt) : ''}
+                  </span>
+                  <button
+                    onClick={() => void onRestoreDevice(d)}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-brand hover:bg-brand/10"
+                    title="Restore this device and its history"
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* bulk action bar */}
       {selectedCount > 0 && (

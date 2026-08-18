@@ -41,14 +41,19 @@ interface Normalized {
 export class TelemetryConsumer implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(TelemetryConsumer.name);
   /**
-   * IMEI → device lookup cache. Positive hits are kept for the process lifetime
-   * (a device's tenant/id never change). Negative hits — IMEI has no device row
-   * *yet* — carry an expiry: a tracker often starts transmitting before the
-   * operator finishes provisioning it, and a permanent `null` would leave that
-   * device invisible until the next restart. Seen in production 2026-08-17.
+   * IMEI → device lookup cache. Both hit kinds expire:
+   *  - Negative (no device row *yet*): 10s. A tracker often transmits before
+   *    the operator finishes provisioning it; a permanent `null` left it
+   *    invisible until restart. Seen in production 2026-08-17.
+   *  - Positive: 30s. A device's id never changes, but it can be soft-DELETED,
+   *    and a lifetime cache kept attaching new positions to the deleted row.
+   *    findByImei() only returns live devices, so a re-query notices within
+   *    the TTL and telemetry for a deleted IMEI is dropped (and, at the edge,
+   *    rejected by ingestion once the allow-list update lands).
    */
   private readonly imeiCache = new Map<string, { ref: { tenantId: string; deviceId: string } | null; expiresAt: number }>();
   private readonly NEGATIVE_CACHE_MS = 10_000;
+  private readonly POSITIVE_CACHE_MS = 30_000;
   private readonly geofenceCache = new Map<string, { at: number; fences: Geofence[] }>();
   private readonly configCache = new Map<string, { at: number; config: AlertConfig }>();
   private readonly alertEngine = new AlertEngine(randomUUID);
@@ -157,14 +162,23 @@ export class TelemetryConsumer implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /**
+   * Drop the cached IMEI → device mapping now, rather than waiting out the
+   * TTL. Called when a device is soft-deleted (or its IMEI otherwise stops
+   * being valid) so telemetry stops attaching to it immediately.
+   */
+  forgetImei(imei: string) {
+    this.imeiCache.delete(imei);
+  }
+
   private async resolveDevice(imei: string) {
     const hit = this.imeiCache.get(imei);
-    if (hit && (hit.ref !== null || Date.now() < hit.expiresAt)) return hit.ref;
+    if (hit && Date.now() < hit.expiresAt) return hit.ref;
     const device = await this.devices.findByImei(imei);
     const ref = device ? { tenantId: device.tenantId, deviceId: device.id } : null;
     this.imeiCache.set(imei, {
       ref,
-      expiresAt: ref ? Number.POSITIVE_INFINITY : Date.now() + this.NEGATIVE_CACHE_MS,
+      expiresAt: Date.now() + (ref ? this.POSITIVE_CACHE_MS : this.NEGATIVE_CACHE_MS),
     });
     return ref;
   }

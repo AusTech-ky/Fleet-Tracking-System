@@ -16,7 +16,7 @@ import { Playback } from '@/components/Playback';
 import { Button } from '@/components/ui';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAction } from '@/components/Toast';
-import type { Position, DrawMode, DrawnShape } from '@/lib/types';
+import type { Position, DrawMode, DrawnShape, Device } from '@/lib/types';
 import { motionState } from '@/lib/motion';
 
 const MapView = dynamic(() => import('@/components/MapView').then((m) => m.MapView), {
@@ -46,6 +46,7 @@ export default function Dashboard() {
   const devicesQuery = useQuery({ queryKey: ['devices'], queryFn: api.listDevices, enabled: isAuthed });
   const geofencesQuery = useQuery({ queryKey: ['geofences'], queryFn: api.listGeofences, enabled: isAuthed });
   const departmentsQuery = useQuery({ queryKey: ['departments'], queryFn: api.listDepartments, enabled: isAuthed, retry: false });
+  const deletedQuery = useQuery({ queryKey: ['devices', 'deleted'], queryFn: api.listDeletedDevices, enabled: isAuthed, retry: false });
 
   const { positions, alerts, state, seed, seedAlerts } = useLivePositions(token);
 
@@ -155,6 +156,33 @@ export default function Dashboard() {
       await api.renameDevice(deviceId, name);
       await queryClient.invalidateQueries({ queryKey: ['devices'] });
     }, `Renamed to “${name}”`);
+  }
+  /**
+   * Soft delete. The confirm says exactly what happens — the device is hidden
+   * and stops reporting, but its history is kept and it can be restored —
+   * because "delete" usually means gone forever and this deliberately doesn't.
+   */
+  async function deleteDevice(device: Device) {
+    const label = device.name?.trim() || `${device.model} ${device.imei}`;
+    if (!window.confirm(
+      `Remove “${label}” from your fleet?
+
+` +
+      `It will disappear from the map and lists and the tracker will stop being accepted. ` +
+      `Its position history, trips and alerts are kept, and you can restore it from “Recently deleted”.`,
+    )) return;
+    await run(async () => {
+      await api.deleteDevice(device.id);
+      if (selectedId === device.id) { setSelectedId(null); setFollowId(null); }
+      await queryClient.invalidateQueries({ queryKey: ['devices'] }); // covers ['devices','deleted'] too
+    }, `“${label}” removed — restore it any time from Recently deleted`);
+  }
+  async function restoreDevice(device: Device) {
+    const label = device.name?.trim() || `${device.model} ${device.imei}`;
+    await run(async () => {
+      await api.restoreDevice(device.id);
+      await queryClient.invalidateQueries({ queryKey: ['devices'] });
+    }, `“${label}” restored`);
   }
 
   /**
@@ -271,6 +299,9 @@ export default function Dashboard() {
             onDeleteGroup={deleteGroup}
             onMoveDevices={moveDevices}
             onRenameDevice={renameDevice}
+            onDeleteDevice={deleteDevice}
+            onRestoreDevice={restoreDevice}
+            deletedDevices={deletedQuery.data ?? []}
             onAddDevice={() => { setAddDeviceOpen(true); setSidebarOpen(false); }}
           />
         </aside>

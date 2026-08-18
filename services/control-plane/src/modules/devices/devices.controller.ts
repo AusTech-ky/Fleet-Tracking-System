@@ -24,9 +24,22 @@ export class DevicesController {
     return this.devices.list(user);
   }
 
+  /** Soft-deleted devices — the "recently deleted" view. Declared before :id so it isn't captured as an id. */
+  @Get('deleted')
+  listDeleted(@CurrentUser() user: AuthUser) {
+    return this.devices.listDeleted(user);
+  }
+
   @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.devices.get(user, id);
+  }
+
+  /** Undo a soft delete. */
+  @Post(':id/restore')
+  @Roles('admin')
+  restore(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.devices.restore(user, id);
   }
 
   @Patch(':id/status')

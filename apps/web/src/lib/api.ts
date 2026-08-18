@@ -150,6 +150,10 @@ export const api = {
 
   createDevice: (body: { imei: string; model: string; name?: string | null; departmentId?: string | null }) =>
     request<Device>('/devices', { method: 'POST', body: JSON.stringify(body) }),
+  /** Soft delete: hides the device, keeps every position/trip/alert; restorable. */
+  deleteDevice: (deviceId: string) => request<void>(`/devices/${deviceId}`, { method: 'DELETE' }),
+  listDeletedDevices: () => request<Device[]>('/devices/deleted'),
+  restoreDevice: (deviceId: string) => request<Device>(`/devices/${deviceId}/restore`, { method: 'POST' }),
 
   /** Read a tracker's reporting profile back from the device, over the air. */
   readReportingProfile: (deviceId: string, network: NetworkMode, motion: MotionMode) =>

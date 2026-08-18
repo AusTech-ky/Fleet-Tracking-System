@@ -10,6 +10,8 @@ export interface Device {
   vehicleId: string | null;
   departmentId: string | null;
   createdAt: string;
+  /** soft delete marker; non-null = hidden but history kept, restorable */
+  deletedAt: string | null;
 }
 
 export interface Department {

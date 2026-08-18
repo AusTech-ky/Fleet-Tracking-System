@@ -34,16 +34,29 @@ export interface SubscriptionRepository {
   set(tenantId: string, sub: Subscription): Promise<Subscription>;
 }
 
+/**
+ * Devices are soft-deleted: `deletedAt` set, row kept, history preserved.
+ * Every read here EXCLUDES deleted rows unless the method says otherwise —
+ * so callers can't accidentally surface a deleted device or attach new
+ * telemetry to it. `findById` takes an opt-in flag for the restore path.
+ */
 export interface DeviceRepository {
-  create(d: Omit<Device, 'createdAt'>): Promise<Device>;
-  findById(tenantId: string, id: string): Promise<Device | null>;
+  create(d: Omit<Device, 'createdAt' | 'deletedAt'>): Promise<Device>;
+  findById(tenantId: string, id: string, opts?: { includeDeleted?: boolean }): Promise<Device | null>;
+  /** Live device with this IMEI (deleted rows keep their IMEI but never match here). */
   findByImei(imei: string): Promise<Device | null>;
-  /** List a tenant's devices; if departmentIds is given, only those departments. */
+  /** List a tenant's LIVE devices; if departmentIds is given, only those departments. */
   list(tenantId: string, departmentIds?: string[]): Promise<Device[]>;
+  /** A tenant's soft-deleted devices, for the "recently deleted" view / restore. */
+  listDeleted(tenantId: string): Promise<Device[]>;
+  /** Live device count (quota checks). */
   count(tenantId: string): Promise<number>;
   update(tenantId: string, id: string, patch: Partial<Device>): Promise<Device | null>;
-  remove(tenantId: string, id: string): Promise<boolean>;
-  /** IMEIs of all devices allowed to send (status active/provisioned), all tenants. */
+  /** Soft delete: stamps deletedAt. Returns false if not found or already deleted. */
+  softDelete(tenantId: string, id: string, at: string): Promise<boolean>;
+  /** Undo a soft delete. Returns false if not found / not deleted / IMEI now taken by a live row. */
+  restore(tenantId: string, id: string): Promise<boolean>;
+  /** IMEIs of all LIVE devices allowed to send (status active/provisioned), all tenants. */
   activeImeis(): Promise<string[]>;
 }
 

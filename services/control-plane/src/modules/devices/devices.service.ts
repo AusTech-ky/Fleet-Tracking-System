@@ -1,4 +1,6 @@
 import { Inject, Injectable, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { TelemetryConsumer } from '../telemetry/telemetry.consumer';
 import { randomUUID } from 'node:crypto';
 import { TOKENS, type DeviceRepository, type OrgUnitRepository } from '../../domain/repository';
 import type { AllowListPublisher } from '../../integrations/ports';
@@ -17,7 +19,22 @@ export class DevicesService {
     @Inject(TOKENS.AllowListPublisher) private readonly allowList: AllowListPublisher,
     @Inject(TOKENS.OrgUnitRepository) private readonly orgUnits: OrgUnitRepository,
     private readonly billing: BillingService,
+    private readonly moduleRef: ModuleRef,
   ) {}
+
+  /**
+   * Tell the telemetry consumer to forget an IMEI right now, so a deleted
+   * device stops receiving positions immediately instead of after its cache
+   * TTL. Looked up lazily via ModuleRef: the consumer depends on the device
+   * repository, so injecting it here directly would be a cycle.
+   */
+  private forgetImei(imei: string) {
+    try {
+      this.moduleRef.get(TelemetryConsumer, { strict: false })?.forgetImei(imei);
+    } catch {
+      /* consumer not registered (e.g. a slim test module) — the TTL still bounds it */
+    }
+  }
 
   /** Department ids a user may access (their subtree), or null for tenant-wide. */
   private async scopeFor(user: AuthUser): Promise<string[] | null> {
@@ -57,7 +74,22 @@ export class DevicesService {
 
   /** Fetch a device, enforcing tenant + department scope (404 if out of scope). */
   async get(user: AuthUser, id: string): Promise<Device> {
-    const d = await this.devices.findById(user.tenantId, id);
+    return this.getScoped(user, id, false);
+  }
+
+  /**
+   * Same tenant + department scope check, but a soft-deleted device is still
+   * found. For read-only HISTORY paths: deleting a device must not make its
+   * past positions, trips and alerts unreadable — preserving history is the
+   * whole point of soft delete. Never use this for anything that mutates or
+   * that feeds the live map.
+   */
+  async getIncludingDeleted(user: AuthUser, id: string): Promise<Device> {
+    return this.getScoped(user, id, true);
+  }
+
+  private async getScoped(user: AuthUser, id: string, includeDeleted: boolean): Promise<Device> {
+    const d = await this.devices.findById(user.tenantId, id, { includeDeleted });
     if (!d) throw new NotFoundException('Device not found');
     const scope = await this.scopeFor(user);
     if (scope && (d.departmentId === null || !scope.includes(d.departmentId))) {
@@ -83,10 +115,45 @@ export class DevicesService {
     return updated;
   }
 
+  /**
+   * Soft delete. The device disappears from every list, count, and lookup,
+   * and ingestion stops accepting its IMEI — but the row stays, so every
+   * position, trip and alert keyed on its id remains readable and restorable.
+   * Nothing is ever hard-deleted from here.
+   */
   async remove(user: AuthUser, id: string): Promise<void> {
-    const existing = await this.get(user, id);
-    await this.devices.remove(user.tenantId, id);
+    const existing = await this.get(user, id); // live + in scope, else 404
+    await this.devices.softDelete(user.tenantId, id, new Date().toISOString());
+    // Stop ingestion accepting this tracker (its live socket, if any, is
+    // dropped on next login) and stop the consumer attaching anything more to
+    // this row — both immediately.
     await this.allowList.remove(existing.imei);
+    this.forgetImei(existing.imei);
+  }
+
+  /** Soft-deleted devices in the caller's tenant (and department scope). */
+  async listDeleted(user: AuthUser): Promise<Device[]> {
+    const scope = await this.scopeFor(user);
+    const all = await this.devices.listDeleted(user.tenantId);
+    return scope ? all.filter((d) => d.departmentId !== null && scope.includes(d.departmentId)) : all;
+  }
+
+  /**
+   * Undo a soft delete. Fails (409) if the IMEI has since been provisioned
+   * again as a live device — two live rows can't share a tracker.
+   */
+  async restore(user: AuthUser, id: string): Promise<Device> {
+    const d = await this.devices.findById(user.tenantId, id, { includeDeleted: true });
+    if (!d || d.deletedAt === null) throw new NotFoundException('No deleted device with that id');
+    const scope = await this.scopeFor(user);
+    if (scope && (d.departmentId === null || !scope.includes(d.departmentId))) throw new NotFoundException('No deleted device with that id');
+    await this.billing.assertCanAddDevice(user.tenantId); // restoring counts against the plan again
+    const ok = await this.devices.restore(user.tenantId, id);
+    if (!ok) throw new ConflictException(`IMEI ${d.imei} is now used by another live device — cannot restore`);
+    const restored = (await this.devices.findById(user.tenantId, id))!;
+    if (SENDING_STATUSES.includes(restored.status)) await this.allowList.add(restored.imei);
+    this.forgetImei(restored.imei); // drop any cached "no device" from while it was deleted
+    return restored;
   }
 
   /** Validate a target department exists in the tenant and is within the user's scope. */

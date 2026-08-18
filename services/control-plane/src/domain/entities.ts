@@ -72,6 +72,11 @@ export interface Device {
   vehicleId: string | null;
   departmentId: string | null;
   createdAt: string;
+  /**
+   * Soft delete. Non-null = removed from every normal view, but the row and
+   * all history keyed on this id are kept. Restorable.
+   */
+  deletedAt: string | null;
 }
 
 export interface Vehicle {

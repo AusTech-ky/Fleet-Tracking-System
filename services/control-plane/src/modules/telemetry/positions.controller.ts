@@ -19,7 +19,7 @@ export class PositionsController {
 
   @Get('latest')
   async latest(@CurrentUser() user: AuthUser, @Param('deviceId') deviceId: string) {
-    await this.devices.get(user, deviceId); // tenant + department scope check
+    await this.devices.getIncludingDeleted(user, deviceId); // read-only: deleted devices still resolve
     let pos = await this.hot.getLast(user.tenantId, deviceId);
     if (!pos) {
       // Hot-state is a cache, not the record. It's empty after a Redis restart,
@@ -42,7 +42,8 @@ export class PositionsController {
     @Query('to') to?: string,
     @Query('limit') limit?: string,
   ) {
-    await this.devices.get(user, deviceId);
+    // Read-only history: still served for a soft-deleted device.
+    await this.devices.getIncludingDeleted(user, deviceId);
     const fromTs = from ?? new Date(Date.now() - 24 * 3600_000).toISOString();
     const toTs = to ?? new Date().toISOString();
     const cap = Math.min(Number(limit ?? 1000), 10_000);

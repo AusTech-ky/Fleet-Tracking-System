@@ -282,27 +282,14 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
-      {/* Basemap switcher */}
-      <div className="absolute left-2 top-2 z-10 flex overflow-hidden rounded-md border border-border bg-surface/95 text-xs shadow-lg backdrop-blur">
-        {BASEMAPS.map((b) => (
-          <button
-            key={b.id}
-            onClick={() => setBasemap(b.id)}
-            className={`px-2.5 py-1.5 transition-colors ${
-              basemap === b.id ? 'bg-brand text-brand-fg' : 'text-fg hover:bg-surface-2'
-            }`}
-          >
-            {b.label}
-          </button>
-        ))}
-        <button
-          onClick={fitAll}
-          title="Zoom to fit all devices"
-          className="border-l border-border px-2.5 py-1.5 text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
-        >
-          Fit all
-        </button>
-      </div>
+      {/* Map toolbar — bottom-left, icon buttons. The layers icon opens the
+          basemap menu upward so it never covers the map area above it. */}
+      <MapToolbar
+        basemap={basemap}
+        onBasemap={setBasemap}
+        onFitAll={fitAll}
+        fitDisabled={Object.keys(positions).length === 0}
+      />
 
       {/* Motion legend — the colours must be self-explaining on the map itself. */}
       <div
@@ -315,6 +302,97 @@ export function MapView({ positions, devices, selectedId, history, geofences, pl
             {MOTION_LABEL[s]}
           </span>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Bottom-left map toolbar. Compact icon buttons instead of a strip of labelled
+ * tabs, so the map keeps its top edge clear. The basemap picker is a context
+ * menu that opens UPWARD from the layers icon.
+ */
+function MapToolbar({
+  basemap, onBasemap, onFitAll, fitDisabled,
+}: {
+  basemap: BasemapId;
+  onBasemap: (id: BasemapId) => void;
+  onFitAll: () => void;
+  fitDisabled: boolean;
+}) {
+  const [layersOpen, setLayersOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  // Close on outside click / Escape — standard menu hygiene.
+  useEffect(() => {
+    if (!layersOpen) return;
+    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setLayersOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setLayersOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [layersOpen]);
+
+  const current = BASEMAPS.find((b) => b.id === basemap)?.label ?? basemap;
+  const btn = 'grid h-9 w-9 place-items-center text-fg transition-colors hover:bg-surface-2 disabled:opacity-40 disabled:hover:bg-transparent';
+
+  return (
+    <div ref={box} className="absolute bottom-8 left-2 z-10">
+      {/* Upward context menu */}
+      {layersOpen && (
+        <div
+          role="menu"
+          aria-label="Map type"
+          className="absolute bottom-full left-0 mb-1.5 min-w-40 overflow-hidden rounded-lg border border-border bg-surface/95 py-1 text-xs shadow-lg backdrop-blur"
+        >
+          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-fg-subtle">Map type</div>
+          {BASEMAPS.map((b) => (
+            <button
+              key={b.id}
+              role="menuitemradio"
+              aria-checked={basemap === b.id}
+              onClick={() => { onBasemap(b.id); setLayersOpen(false); }}
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-surface-2 ${
+                basemap === b.id ? 'font-medium text-fg' : 'text-fg-muted'
+              }`}
+            >
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${basemap === b.id ? 'bg-brand' : 'bg-transparent'}`} />
+              {b.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex overflow-hidden rounded-lg border border-border bg-surface/95 shadow-lg backdrop-blur">
+        <button
+          onClick={() => setLayersOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={layersOpen}
+          aria-label={`Map type: ${current}`}
+          title={`Map type: ${current}`}
+          className={`${btn} ${layersOpen ? 'bg-surface-2' : ''}`}
+        >
+          {/* layers icon */}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" aria-hidden>
+            <path d="M12 3 2 8l10 5 10-5-10-5Z" />
+            <path d="m2 12 10 5 10-5" />
+            <path d="m2 16 10 5 10-5" />
+          </svg>
+        </button>
+        <button
+          onClick={onFitAll}
+          disabled={fitDisabled}
+          aria-label="Zoom to fit all vehicles"
+          title="Zoom to fit all vehicles"
+          className={`${btn} border-l border-border`}
+        >
+          {/* fit / frame icon */}
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M3 8V5a2 2 0 0 1 2-2h3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" />
+            <path d="M21 16v3a2 2 0 0 1-2 2h-3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
       </div>
     </div>
   );

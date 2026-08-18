@@ -11,8 +11,7 @@ const statusTone: Record<string, string> = {
 
 /**
  * Detail card for the selected device: live telemetry, inline rename, and map
- * actions (centre / follow). Sits top-left over the map, under the basemap
- * switcher.
+ * actions (centre / follow). Sits top-left over the map.
  */
 export function DeviceDetail({
   device, position, groupName, following,
@@ -55,7 +54,7 @@ export function DeviceDetail({
   const stale = position ? isStale(position.ts) : false;
 
   return (
-    <div className="absolute left-2 top-14 z-10 w-72 overflow-hidden rounded-xl border border-border bg-surface/95 shadow-lg backdrop-blur">
+    <div className="absolute left-2 top-2 z-10 w-72 overflow-hidden rounded-xl border border-border bg-surface/95 shadow-lg backdrop-blur">
       <div className="flex items-start gap-2 border-b border-border px-3 py-2.5">
         <div className="min-w-0 flex-1">
           {editing ? (
